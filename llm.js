@@ -10,7 +10,9 @@ export const MODELS = {
 
 // Smaller context: halves the KV cache memory and is enough for weather + diary + question.
 // On Android, Chrome kills the tab if the model exceeds the GPU memory it is allowed.
-const CHAT_OPTS = { context_window_size: 2048 };
+// Gemma 3's config ships sliding_window_size 512, and WebLLM refuses a positive value for both,
+// so the sliding window is switched off explicitly (a 512-token window would also drop the instructions).
+const CHAT_OPTS = { context_window_size: 2048, sliding_window_size: -1 };
 
 const LANGUAGE = lang === 'it' ? 'Italian' : 'English';
 

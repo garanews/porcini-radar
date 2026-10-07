@@ -1,6 +1,6 @@
 // Service worker: keeps the app available offline, in the woods with no signal.
 // The AI model does not go through here: WebLLM stores it in the browser cache by itself.
-const VERSION = 'v3';
+const VERSION = 'v4';
 const SHELL = [
   './',
   'index.html',
