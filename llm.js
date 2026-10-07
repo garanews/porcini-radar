@@ -3,9 +3,13 @@
 
 // Gemma, il modello open-weight di Google, in versione quantizzata a 4 bit.
 export const MODELS = {
-  'gemma-2-2b-it-q4f16_1-MLC': 'Gemma 2 2B (consigliato, ~1,4 GB)',
-  'gemma3-1b-it-q4f16_1-MLC': 'Gemma 3 1B (più leggero, ~700 MB)',
+  'gemma3-1b-it-q4f16_1-MLC': 'Gemma 3 1B (consigliato, ~700 MB)',
+  'gemma-2-2b-it-q4f16_1-MLC': 'Gemma 2 2B (più bravo, ~1,4 GB: solo telefoni con tanta memoria)',
 };
+
+// Contesto ridotto: dimezza la memoria della cache e basta per meteo + diario + domanda.
+// Su Android Chrome chiude la scheda se il modello supera la memoria concessa alla GPU.
+const CHAT_OPTS = { context_window_size: 2048 };
 
 const SYSTEM_PROMPT = `Sei "Porcini Radar", un compagno esperto per la ricerca dei funghi porcini nei boschi italiani.
 Rispondi in italiano, in modo breve e pratico (massimo 6-8 frasi), come un vecchio cercatore che dà consigli a un amico.
@@ -39,8 +43,19 @@ export async function load(modelId, onProgress) {
     new Worker(new URL('./llm-worker.js', import.meta.url), { type: 'module' }),
     modelId,
     { initProgressCallback: (p) => onProgress(p) },
+    CHAT_OPTS,
   );
   loadedModel = modelId;
+}
+
+export async function remove(modelId) {
+  if (engine && loadedModel === modelId) {
+    await engine.unload();
+    engine = null;
+    loadedModel = null;
+  }
+  const webllm = await import('./vendor/web-llm.js');
+  await webllm.deleteModelAllInfoInCache(modelId);
 }
 
 export const isLoaded = () => engine !== null;
@@ -48,7 +63,7 @@ export const isLoaded = () => engine !== null;
 // history: [{role, content}], context: testo con meteo e diario. onToken riceve il testo parziale.
 export async function ask(history, context, onToken) {
   // Gemma non ha un ruolo "system": istruzioni e dati vanno in testa al primo messaggio utente.
-  const recent = history.slice(-6);
+  const recent = history.slice(-4);
   if (recent[0]?.role !== 'user') recent.shift();
   const messages = recent.map((m, i) => (i === 0
     ? { role: 'user', content: `${SYSTEM_PROMPT}\n\nDATI ATTUALI:\n${context}\n\nDOMANDA:\n${m.content}` }
@@ -57,7 +72,7 @@ export async function ask(history, context, onToken) {
     messages,
     stream: true,
     temperature: 0.6,
-    max_tokens: 400,
+    max_tokens: 300,
   });
   let text = '';
   for await (const chunk of stream) {

@@ -1,6 +1,6 @@
 // Service worker: tiene l'app disponibile offline, nel bosco senza campo.
 // Il modello AI non passa di qui: WebLLM lo salva da sé nella cache del browser.
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL = [
   './',
   'index.html',

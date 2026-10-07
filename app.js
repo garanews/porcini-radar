@@ -7,6 +7,13 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(
 const todayIso = () => new Date().toLocaleDateString('sv-SE'); // YYYY-MM-DD locale
 const STALE_MS = 3 * 60 * 60 * 1000;
 
+// Gli errori del worker/WebGPU non sempre sono Error con un messaggio: mostra quello che c'è.
+function errText(e) {
+  if (e?.message) return `${e.name ?? 'Error'}: ${e.message}`;
+  if (typeof e === 'string') return e;
+  try { return JSON.stringify(e) ?? String(e); } catch { return String(e); }
+}
+
 // ---------- Navigazione e stato rete ----------
 
 document.querySelectorAll('nav button').forEach((btn) =>
@@ -296,14 +303,26 @@ async function refreshModelStatus() {
     $('#btn-load').disabled = true;
     return;
   }
-  if (llm.isLoaded()) return;
   const cached = await llm.isCached(modelSelect.value).catch(() => false);
+  $('#btn-remove').hidden = !cached;
+  if (llm.isLoaded()) return;
   $('#btn-load').textContent = cached ? 'Avvia modello (già scaricato)' : 'Scarica modello (usa il Wi-Fi)';
   status.textContent = cached
     ? 'Il modello è sul telefono: funziona anche senza campo.'
     : 'Il download serve una volta sola, poi funziona offline.';
 }
 modelSelect.addEventListener('change', refreshModelStatus);
+
+$('#btn-remove').addEventListener('click', async () => {
+  const label = llm.MODELS[modelSelect.value];
+  if (!confirm(`Eliminare ${label} dal telefono? Per usarlo andrà riscaricato.`)) return;
+  await llm.remove(modelSelect.value);
+  $('#ask-input').disabled = true;
+  $('#ask-form button').disabled = true;
+  $('#btn-load').disabled = false;
+  $('#model-status').textContent = 'Modello eliminato.';
+  refreshModelStatus();
+});
 
 $('#btn-load').addEventListener('click', async () => {
   const bar = $('#model-progress');
@@ -317,7 +336,8 @@ $('#btn-load').addEventListener('click', async () => {
     $('#ask-input').disabled = false;
     $('#ask-form button').disabled = false;
   } catch (e) {
-    status.textContent = `Errore: ${e.message}`;
+    console.error(e);
+    status.textContent = `Errore nel caricare il modello: ${errText(e)}`;
     $('#btn-load').disabled = false;
   }
 });
@@ -371,7 +391,8 @@ async function send(question) {
     const answer = await llm.ask(history, buildContext(), (t) => { out.textContent = t; });
     history.push({ role: 'assistant', content: answer });
   } catch (e) {
-    out.textContent = `Errore: ${e.message}`;
+    console.error(e);
+    out.textContent = `Errore: ${errText(e)}`;
     history.pop();
   }
   $('#ask-input').disabled = false;
