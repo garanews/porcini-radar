@@ -1,17 +1,18 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>Test radar</title>
-<pre id="out">in corso…</pre>
+<title>Radar test</title>
+<pre id="out">running…</pre>
 <script type="module">
+  // Scores real Open-Meteo data. Open with ?lang=it or ?lang=en to check both languages.
   import { scoreDays, fetchWeather } from '../radar.js';
   const out = document.getElementById('out');
   try {
-    // Borgotaro (PR), zona classica del porcino
+    // Borgotaro (Parma), a classic porcini area
     const wx = await fetchWeather({ lat: 44.49, lon: 9.77 });
     const days = scoreDays(wx.daily, new Date().toLocaleDateString('sv-SE'));
-    out.textContent = `quota ${wx.elevation} m\n` +
+    out.textContent = `elevation ${wx.elevation} m\n` +
       days.map((d) => `${d.date} ${String(d.score).padStart(3)} ${d.label.text.padEnd(9)} | ${d.reasons.join(' | ')}`).join('\n');
   } catch (e) {
-    out.textContent = 'ERRORE ' + e.stack;
+    out.textContent = 'ERROR ' + e.stack;
   }
 </script>

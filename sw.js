@@ -1,11 +1,12 @@
-// Service worker: tiene l'app disponibile offline, nel bosco senza campo.
-// Il modello AI non passa di qui: WebLLM lo salva da sé nella cache del browser.
-const VERSION = 'v2';
+// Service worker: keeps the app available offline, in the woods with no signal.
+// The AI model does not go through here: WebLLM stores it in the browser cache by itself.
+const VERSION = 'v3';
 const SHELL = [
   './',
   'index.html',
   'style.css',
   'app.js',
+  'i18n.js',
   'radar.js',
   'db.js',
   'llm.js',
@@ -29,12 +30,13 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-// Solo file dell'app: prima la rete (per avere gli aggiornamenti), se non c'è la cache.
+// App files only: network first (to get updates), cache when there is no signal.
+// `no-cache` revalidates with the server, so an update never mixes old and new files.
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: 'no-cache' })
       .then((res) => {
         const copy = res.clone();
         caches.open(VERSION).then((c) => c.put(e.request, copy));

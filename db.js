@@ -1,7 +1,7 @@
-// Archivio locale (IndexedDB): tutto resta sul telefono, niente cloud.
-//  places  - i posti salvati con il GPS
-//  entries - il diario delle uscite (foto comprese, come Blob)
-//  kv      - cache delle previsioni, per consultarle offline
+// Local storage (IndexedDB): everything stays on the phone, no cloud.
+//  places  - spots saved with the GPS
+//  entries - the outing diary (photos included, as Blobs)
+//  kv      - forecast cache, to read it offline
 
 const DB_NAME = 'porcini-radar';
 let dbPromise;

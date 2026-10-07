@@ -1,27 +1,30 @@
-// LLM open-weight che gira nel browser del telefono (WebLLM + WebGPU).
-// Il modello si scarica una volta, resta nella cache del browser e poi funziona offline.
+// Open-weight LLM running inside the phone's browser (WebLLM + WebGPU).
+// The model is downloaded once, stays in the browser cache and then works offline.
+import { lang } from './i18n.js';
 
-// Gemma, il modello open-weight di Google, in versione quantizzata a 4 bit.
+// Gemma, Google's open-weight model, 4-bit quantized. Values are i18n keys for the labels.
 export const MODELS = {
-  'gemma3-1b-it-q4f16_1-MLC': 'Gemma 3 1B (consigliato, ~700 MB)',
-  'gemma-2-2b-it-q4f16_1-MLC': 'Gemma 2 2B (più bravo, ~1,4 GB: solo telefoni con tanta memoria)',
+  'gemma3-1b-it-q4f16_1-MLC': 'model.gemma3-1b',
+  'gemma-2-2b-it-q4f16_1-MLC': 'model.gemma2-2b',
 };
 
-// Contesto ridotto: dimezza la memoria della cache e basta per meteo + diario + domanda.
-// Su Android Chrome chiude la scheda se il modello supera la memoria concessa alla GPU.
+// Smaller context: halves the KV cache memory and is enough for weather + diary + question.
+// On Android, Chrome kills the tab if the model exceeds the GPU memory it is allowed.
 const CHAT_OPTS = { context_window_size: 2048 };
 
-const SYSTEM_PROMPT = `Sei "Porcini Radar", un compagno esperto per la ricerca dei funghi porcini nei boschi italiani.
-Rispondi in italiano, in modo breve e pratico (massimo 6-8 frasi), come un vecchio cercatore che dà consigli a un amico.
-Usa i dati meteo e il diario che ti vengono forniti, senza inventare numeri.
-Conoscenze utili: i porcini (Boletus edulis, aereus, pinophilus, aestivalis) amano faggete, castagneti, abetaie e querceti;
-spuntano 10-15 giorni dopo piogge importanti con temperature miti; in autunno conviene la quota media (800-1400 m) e i versanti più caldi quando fa freddo, quelli a nord quando fa caldo.
-REGOLA DI SICUREZZA ASSOLUTA: non dire mai che un fungo è commestibile o sicuro, e non provare a identificarne la commestibilità da una descrizione.
-Se l'utente chiede se può mangiare un fungo, rispondi che deve farlo controllare gratuitamente all'Ispettorato Micologico della sua ASL prima di consumarlo.
-Ricorda quando serve le regole di raccolta: tesserino regionale dove richiesto, limiti di peso, cestino areato, non rastrellare il sottobosco.`;
+const LANGUAGE = lang === 'it' ? 'Italian' : 'English';
 
-// Domande sulla commestibilità: l'avviso lo mostra l'app, non ci affidiamo solo al modello.
-export const EDIBILITY_RE = /\b(mangi|commestibil|velenos|tossic|cucinar|mangiabil|si pu[oò] mangiare|è buono da)/i;
+const SYSTEM_PROMPT = `You are "Porcini Radar", an expert companion for foraging porcini mushrooms in Italian woods.
+Always answer in ${LANGUAGE}, briefly and practically (6-8 sentences at most), like a seasoned forager giving advice to a friend.
+Use the weather data and the diary you are given, without making up numbers.
+Useful knowledge: porcini (Boletus edulis, aereus, pinophilus, aestivalis) love beech, chestnut, fir and oak woods;
+they appear 10-15 days after heavy rain with mild temperatures; in autumn mid altitudes (800-1400 m) are best, warmer slopes when it is cold and north-facing slopes when it is warm.
+ABSOLUTE SAFETY RULE: never say a mushroom is edible or safe, and never try to judge edibility from a description.
+If the user asks whether they can eat a mushroom, tell them to have it checked by a mycological inspection service (in Italy the ASL Ispettorato Micologico, free of charge) before eating it.
+When relevant, remind the foraging rules: regional permit where required, weight limits, a ventilated basket, never rake the undergrowth.`;
+
+// Questions about edibility: the app shows the warning itself, it does not rely only on the model.
+export const EDIBILITY_RE = /(mangi|commestibil|velenos|tossic|cucinar|si pu[oò] mangiare|edible|\beat\b|eating|poison|toxic|safe to|cook)/i;
 
 let engine = null;
 let loadedModel = null;
@@ -36,7 +39,7 @@ export async function isCached(modelId) {
 export async function load(modelId, onProgress) {
   if (engine && loadedModel === modelId) return;
   const webllm = await import('./vendor/web-llm.js');
-  // Chiede al browser di non cancellare il modello quando serve spazio.
+  // Ask the browser not to evict the model when it needs space.
   await navigator.storage?.persist?.();
   if (engine) await engine.unload();
   engine = await webllm.CreateWebWorkerMLCEngine(
@@ -60,13 +63,13 @@ export async function remove(modelId) {
 
 export const isLoaded = () => engine !== null;
 
-// history: [{role, content}], context: testo con meteo e diario. onToken riceve il testo parziale.
+// history: [{role, content}], context: text with weather and diary. onToken gets the partial text.
 export async function ask(history, context, onToken) {
-  // Gemma non ha un ruolo "system": istruzioni e dati vanno in testa al primo messaggio utente.
+  // Gemma has no "system" role: instructions and data go at the top of the first user message.
   const recent = history.slice(-4);
   if (recent[0]?.role !== 'user') recent.shift();
   const messages = recent.map((m, i) => (i === 0
-    ? { role: 'user', content: `${SYSTEM_PROMPT}\n\nDATI ATTUALI:\n${context}\n\nDOMANDA:\n${m.content}` }
+    ? { role: 'user', content: `${SYSTEM_PROMPT}\n\nCURRENT DATA:\n${context}\n\nQUESTION:\n${m.content}` }
     : m));
   const stream = await engine.chat.completions.create({
     messages,
