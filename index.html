@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Porcini Radar</title>
+  <meta name="description" content="Quando e dove cercare i porcini, con un'AI open-source che funziona offline nel bosco.">
+  <meta name="theme-color" content="#5b3a1e">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>🍄 Porcini Radar</h1>
+    <span id="net" class="badge"></span>
+  </header>
+
+  <main>
+    <!-- RADAR -->
+    <section id="tab-radar" class="tab active">
+      <div class="actions">
+        <button id="btn-here" class="primary">📍 Radar qui</button>
+        <button id="btn-save-place">➕ Salva questo posto</button>
+        <button id="btn-refresh" title="Aggiorna le previsioni">🔄</button>
+      </div>
+      <p id="radar-status" class="muted"></p>
+      <div id="here"></div>
+      <h2>I miei posti</h2>
+      <div id="places"><p class="muted">Nessun posto salvato. Quando sei in un bel bosco premi “Salva questo posto”.</p></div>
+      <p class="muted small">Punteggio stimato da pioggia delle 1-3 settimane precedenti, temperatura e notti fredde (dati <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>). È un'euristica: tarala col diario.</p>
+    </section>
+
+    <!-- DIARIO -->
+    <section id="tab-diary" class="tab">
+      <details id="new-entry" class="card">
+        <summary>➕ Nuova uscita</summary>
+        <form id="entry-form">
+          <label>Foto <input type="file" name="photo" accept="image/*" capture="environment"></label>
+          <div class="row">
+            <label>Porcini trovati <input type="number" name="found" min="0" value="0" inputmode="numeric"></label>
+            <label>Peso (g) <input type="number" name="grams" min="0" inputmode="numeric"></label>
+          </div>
+          <label>Bosco
+            <select name="habitat">
+              <option>Faggio</option><option>Castagno</option><option>Abete</option>
+              <option>Pino</option><option>Quercia</option><option>Misto</option><option>Altro</option>
+            </select>
+          </label>
+          <label>Note <textarea name="notes" rows="3" placeholder="Versante, terreno, altri funghi visti…"></textarea></label>
+          <label class="check"><input type="checkbox" name="asPlace"> Salva anche come posto</label>
+          <button class="primary" type="submit">💾 Salva (con posizione GPS)</button>
+          <p id="entry-status" class="muted small"></p>
+        </form>
+      </details>
+      <div id="entries"></div>
+      <button id="btn-export">⬇️ Esporta backup del diario</button>
+    </section>
+
+    <!-- CHIEDI -->
+    <section id="tab-ask" class="tab">
+      <p class="warning">⚠️ L'AI <strong>non</strong> dice se un fungo è commestibile. Prima di mangiarli falli sempre controllare
+        all'<strong>Ispettorato Micologico dell'ASL</strong> (è gratis).</p>
+      <div id="model-box" class="card">
+        <label>Modello
+          <select id="model-select"></select>
+        </label>
+        <button id="btn-load" class="primary">Carica modello</button>
+        <progress id="model-progress" max="1" value="0" hidden></progress>
+        <p id="model-status" class="muted small"></p>
+      </div>
+      <div id="chat"></div>
+      <div class="chips">
+        <button data-q="Dove conviene andare nei prossimi giorni, e quando?">Dove vado nei prossimi giorni?</button>
+        <button data-q="Guardando il mio diario, in che condizioni ho trovato più porcini?">Cosa dice il mio diario?</button>
+        <button data-q="Sono nel bosco adesso: dove guardo per trovare porcini?">Sono nel bosco: dove guardo?</button>
+      </div>
+      <form id="ask-form">
+        <input id="ask-input" placeholder="Chiedi al tuo compagno di ricerca…" autocomplete="off" disabled>
+        <button class="primary" disabled>➤</button>
+      </form>
+    </section>
+  </main>
+
+  <nav>
+    <button data-tab="radar" class="active">📡<span>Radar</span></button>
+    <button data-tab="diary">📓<span>Diario</span></button>
+    <button data-tab="ask">💬<span>Chiedi</span></button>
+  </nav>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

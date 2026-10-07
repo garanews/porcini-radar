@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Test radar</title>
+<pre id="out">in corso…</pre>
+<script type="module">
+  import { scoreDays, fetchWeather } from '../radar.js';
+  const out = document.getElementById('out');
+  try {
+    // Borgotaro (PR), zona classica del porcino
+    const wx = await fetchWeather({ lat: 44.49, lon: 9.77 });
+    const days = scoreDays(wx.daily, new Date().toLocaleDateString('sv-SE'));
+    out.textContent = `quota ${wx.elevation} m\n` +
+      days.map((d) => `${d.date} ${String(d.score).padStart(3)} ${d.label.text.padEnd(9)} | ${d.reasons.join(' | ')}`).join('\n');
+  } catch (e) {
+    out.textContent = 'ERRORE ' + e.stack;
+  }
+</script>
