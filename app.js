@@ -296,9 +296,7 @@ $('#btn-export').addEventListener('click', async () => {
 
 // ---------- Ask (local LLM) ----------
 
-const modelSelect = $('#model-select');
-for (const [id, labelKey] of Object.entries(llm.MODELS)) modelSelect.add(new Option(t(labelKey), id));
-const history = [];
+$('#model-name').textContent = llm.MODEL_NAME;
 
 async function refreshModelStatus() {
   const status = $('#model-status');
@@ -307,17 +305,16 @@ async function refreshModelStatus() {
     $('#btn-load').disabled = true;
     return;
   }
-  const cached = await llm.isCached(modelSelect.value).catch(() => false);
+  const cached = await llm.isCached().catch(() => false);
   $('#btn-remove').hidden = !cached;
   if (llm.isLoaded()) return;
   $('#btn-load').textContent = t(cached ? 'ask.loadCached' : 'ask.loadDownload');
   status.textContent = t(cached ? 'ask.cached' : 'ask.notCached');
 }
-modelSelect.addEventListener('change', refreshModelStatus);
 
 $('#btn-remove').addEventListener('click', async () => {
-  if (!confirm(t('ask.removeConfirm', { model: t(llm.MODELS[modelSelect.value]) }))) return;
-  await llm.remove(modelSelect.value);
+  if (!confirm(t('ask.removeConfirm'))) return;
+  await llm.remove();
   $('#ask-input').disabled = true;
   $('#ask-form button').disabled = true;
   $('#btn-load').disabled = false;
@@ -331,7 +328,7 @@ $('#btn-load').addEventListener('click', async () => {
   $('#btn-load').disabled = true;
   bar.hidden = false;
   try {
-    await llm.load(modelSelect.value, (p) => { bar.value = p.progress; status.textContent = p.text; });
+    await llm.load((p) => { bar.value = p.progress; status.textContent = p.text; });
     status.textContent = t('ask.ready');
     bar.hidden = true;
     $('#ask-input').disabled = false;
@@ -343,37 +340,42 @@ $('#btn-load').addEventListener('click', async () => {
   }
 });
 
+// Compact on purpose: the model has 1024 tokens for instructions, data, question and answer.
+// So: the 3 spots with the best outlook, one line each, and a short diary summary.
 function buildContext() {
   const lines = [t('ctx.today', { day: fmtDay(todayIso()) })];
   const all = herePlace && forecasts.get('here') ? [herePlace, ...places] : places;
-  let withForecast = 0;
-  for (const p of all) {
-    const wx = forecasts.get(p.id);
-    const days = wx ? scoreDays(wx.daily, todayIso()) : [];
-    if (!days.length) continue;
-    withForecast++;
-    lines.push(t('ctx.place', {
-      name: p.name,
-      elev: wx.elevation,
-      days: days.slice(0, 10).map((d) => `${fmtDay(d.date)} ${d.score}`).join(', '),
-      reasons: days[0].reasons.join('; '),
-    }));
-  }
-  if (!withForecast) lines.push(t('ctx.noPlaces'));
-  const recent = entries.slice(0, 8);
-  if (recent.length) {
-    lines.push(t('ctx.diary'));
-    for (const en of recent) {
-      lines.push(t('ctx.entry', {
-        day: fmtDay(en.date),
-        n: en.found,
-        grams: en.grams ? ` (${en.grams} g)` : '',
-        habitat: habitatName(en.habitat),
-        place: en.radar?.place ? t('ctx.zone', { name: en.radar.place }) : '',
-        score: en.radar?.score != null ? t('ctx.score', { score: en.radar.score }) : '',
-        notes: en.notes ? t('ctx.notes', { notes: en.notes }) : '',
+  const spots = all
+    .map((p) => ({ p, wx: forecasts.get(p.id) }))
+    .map(({ p, wx }) => ({ p, wx, days: wx ? scoreDays(wx.daily, todayIso()) : [] }))
+    .filter((s) => s.days.length)
+    .map((s) => ({ ...s, best: s.days.reduce((a, b) => (b.score > a.score ? b : a)) }))
+    .sort((a, b) => b.best.score - a.best.score)
+    .slice(0, 3);
+  if (spots.length) {
+    lines.push(t('ctx.spots'));
+    for (const { p, wx, days, best } of spots) {
+      lines.push(t('ctx.spot', {
+        name: p.name.slice(0, 30),
+        elev: wx.elevation,
+        today: days[0].score,
+        bestDay: fmtDay(best.date),
+        best: best.score,
+        why: days[0].reasons[0],
       }));
     }
+  } else {
+    lines.push(t('ctx.noPlaces'));
+  }
+  if (entries.length) {
+    const total = entries.reduce((n, en) => n + en.found, 0);
+    const recent = entries.slice(0, 3).map((en) => t('ctx.entry', {
+      day: fmtDay(en.date),
+      n: en.found,
+      habitat: habitatName(en.habitat),
+      score: en.radar?.score != null ? t('ctx.score', { score: en.radar.score }) : '',
+    }));
+    lines.push(t('ctx.diary', { outings: entries.length, total, recent: recent.join('; ') }));
   } else {
     lines.push(t('ctx.noDiary'));
   }
@@ -393,16 +395,13 @@ async function send(question) {
   if (!llm.isLoaded() || !question) return;
   addMsg('user', question);
   if (llm.EDIBILITY_RE.test(question)) addMsg('bot alert', t('ask.edibility'));
-  history.push({ role: 'user', content: question });
   const out = addMsg('bot', '…');
   $('#ask-input').disabled = true;
   try {
-    const answer = await llm.ask(history, buildContext(), (text) => { out.textContent = text; });
-    history.push({ role: 'assistant', content: answer });
+    await llm.ask(question.slice(0, 300), buildContext(), (text) => { out.textContent = text; });
   } catch (e) {
     console.error(e);
     out.textContent = t('ask.error', { err: errText(e) });
-    history.pop();
   }
   $('#ask-input').disabled = false;
   $('#ask-input').focus();

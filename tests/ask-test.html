@@ -1,0 +1,38 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Ask test</title>
+<pre id="out">running…</pre>
+<script type="module">
+  // Runs the app's real LLM path (llm.js + worker) with a realistic compact context.
+  // Open with ?lang=it or ?lang=en. Lines are also POSTed to /log for a local test server.
+  import * as llm from '../llm.js';
+  import { t, fmtDay } from '../i18n.js';
+  const out = document.getElementById('out');
+  const log = (s) => { out.textContent += '\n' + s; fetch('/log', { method: 'POST', body: s }).catch(() => {}); };
+
+  const context = [
+    t('ctx.today', { day: fmtDay('2026-10-08') }),
+    t('ctx.spots'),
+    t('ctx.spot', { name: 'Faggeta del Monte Penna', elev: 1180, today: 12, bestDay: fmtDay('2026-10-17'), best: 100, why: t('reason.bigRain', { mm: 68, day: fmtDay('2026-10-05'), days: 3 }) }),
+    t('ctx.spot', { name: 'Castagneto Borgotaro', elev: 620, today: 30, bestDay: fmtDay('2026-10-16'), best: 86, why: t('reason.bigRain', { mm: 55, day: fmtDay('2026-10-05'), days: 3 }) }),
+    t('ctx.spot', { name: 'Abetaia Passo Cento Croci', elev: 1050, today: 8, bestDay: fmtDay('2026-10-18'), best: 92, why: t('reason.littleRain', { mm: 4 }) }),
+    t('ctx.diary', { outings: 4, total: 23, recent: [
+      t('ctx.entry', { day: fmtDay('2026-10-04'), n: 9, habitat: t('habitat.beech'), score: t('ctx.score', { score: 81 }) }),
+      t('ctx.entry', { day: fmtDay('2026-09-27'), n: 2, habitat: t('habitat.chestnut'), score: t('ctx.score', { score: 35 }) }),
+      t('ctx.entry', { day: fmtDay('2026-09-20'), n: 12, habitat: t('habitat.fir'), score: '' }),
+    ].join('; ') }),
+  ].join('\n');
+
+  try {
+    await llm.load(() => {});
+    log('loaded');
+    for (const key of ['chip.whereQ', 'chip.hereQ']) {
+      const t0 = performance.now();
+      const { text, usage } = await llm.ask(t(key), context, () => {});
+      log(`Q: ${t(key)}\nprompt ${usage?.prompt_tokens} + answer ${usage?.completion_tokens} tokens, ${((performance.now() - t0) / 1000).toFixed(1)} s\nA: ${text}\n`);
+    }
+  } catch (e) {
+    log('ERROR ' + (e?.message ?? e));
+  }
+  log('DONE');
+</script>

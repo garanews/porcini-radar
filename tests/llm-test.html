@@ -1,0 +1,45 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>LLM test</title>
+<pre id="out">running…</pre>
+<script type="module">
+  // Loads a WebLLM model with the given window settings and runs one short prompt.
+  // ?model=<id>&ctx=<context_window_size>&sliding=<sliding_window_size>&sink=<attention_sink_size>
+  import * as webllm from '../vendor/web-llm.js';
+  const out = document.getElementById('out');
+  // Also POSTs each line to /log, for a local test server that records it (ignored elsewhere).
+  const log = (s) => { out.textContent += '\n' + s; fetch('/log', { method: 'POST', body: s }).catch(() => {}); };
+  const q = new URLSearchParams(location.search);
+  const model = q.get('model') ?? 'gemma3-1b-it-q4f16_1-MLC';
+  const opts = {};
+  for (const [k, name] of [['ctx', 'context_window_size'], ['sliding', 'sliding_window_size'], ['sink', 'attention_sink_size']]) {
+    if (q.has(k)) opts[name] = Number(q.get(k));
+  }
+  try {
+    log(`model ${model} opts ${JSON.stringify(opts)} webgpu ${'gpu' in navigator}`);
+    const adapter = await navigator.gpu?.requestAdapter();
+    log(`adapter ${adapter?.info?.vendor} ${adapter?.info?.architecture} f16 ${adapter?.features.has('shader-f16')}`);
+    let last = '';
+    const engine = await webllm.CreateMLCEngine(model, {
+      initProgressCallback: (p) => { if (p.text.slice(0, 30) !== last) { last = p.text.slice(0, 30); } },
+    }, opts);
+    log('loaded');
+    const t0 = performance.now();
+    // ?long=1 sends a prompt as long as the app's (instructions + weather + diary, ~900 tokens).
+    const filler = Array.from({ length: 16 }, (_, i) =>
+      `Spot "Faggeta ${i}" (1050 m): porcini score per day: Wed 7 Oct ${i * 3}, Thu 8 Oct ${i * 4}, Fri 9 Oct ${i * 5}, Sat 10 Oct ${i * 6}. Today: heavy rain (68 mm) from Wed 7 Oct; average temperature of the week 14.0 °C (ideal).`).join('\n');
+    const question = 'In two sentences: when do porcini mushrooms grow after rain?';
+    const content = q.has('long') ? `You are an expert porcini forager. Answer briefly.\n\nCURRENT DATA:\n${filler}\n\nQUESTION:\n${question}` : question;
+    const r = await engine.chat.completions.create({
+      messages: [{ role: 'user', content }],
+      max_tokens: 60,
+      temperature: 0,
+    });
+    const s = (performance.now() - t0) / 1000;
+    log(`prompt ${r.usage.prompt_tokens} tokens, answer ${r.usage.completion_tokens} tokens in ${s.toFixed(1)} s`);
+    log('ANSWER: ' + r.choices[0].message.content);
+  } catch (e) {
+    log('ERROR ' + (e?.message ?? e));
+  }
+  log('DONE');
+</script>
