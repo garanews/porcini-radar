@@ -4,41 +4,51 @@
 //
 // Why CPU and not WebGPU: with WebLLM on a Poco F3 (Adreno 650) the GPU driver reset or
 // froze the screen while answering, and WebLLM's Gemma 3 build degenerated into garbage.
-// llama.cpp runs Gemma 3 correctly (sliding-window attention included) and a 1B model is
-// fast enough on the phone's CPU cores.
+// llama.cpp runs Gemma correctly, in the phone's RAM instead of its GPU memory.
 import { Wllama } from './vendor/wllama/index.js';
-import { lang } from './i18n.js';
+import { t } from './i18n.js';
 
-// Gemma 3 1B instruct, Google's open-weight model, 4-bit Q4_0 GGUF (fastest on ARM CPUs).
-export const MODEL_NAME = 'Gemma 3 1B';
-const MODEL_URL = 'https://huggingface.co/unsloth/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_0.gguf';
-// Every token costs time on a phone CPU: short answers, the advice comes first.
-export const MAX_ANSWER_TOKENS = 150;
+// Google's open-weight Gemma models, 4-bit GGUF. The label keys are in i18n.js.
+export const MODELS = {
+  'gemma3-1b': {
+    name: 'Gemma 3 1B',
+    label: 'model.gemma3-1b',
+    url: 'https://huggingface.co/unsloth/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_0.gguf',
+  },
+  'gemma2-2b': {
+    name: 'Gemma 2 2B',
+    label: 'model.gemma2-2b',
+    url: 'https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf',
+  },
+};
+export const DEFAULT_MODEL = 'gemma3-1b';
 
-const LANGUAGE = lang === 'it' ? 'Italian' : 'English';
+// Every token costs time on a phone CPU: short answers.
+const MAX_ANSWER_TOKENS = 150;
 
-// Small models open with greetings, invent missing facts and repeat every rule they are given:
-// each of those is forbidden or scoped explicitly.
-// The radar's conclusion is computed in code and handed over written out: the model only has
-// to explain it in its own words and add a practical tip, which a 1B model does well.
-const INSTRUCTIONS = `You are an expert porcini forager advising a friend. Answer in ${LANGUAGE}, in at most 3 short sentences. First explain the RADAR CONCLUSION below in your own words, then add one practical tip on where to look (type of wood, altitude, slope). Start directly with the advice: no greetings, do not introduce yourself. Do not invent weather or sightings. Never say a mushroom is edible; only if the user asks about eating or identifying one, send them to the free ASL mycological inspection.`;
-
-// Questions about edibility: the app shows the warning itself, it does not rely only on the model.
+// Questions about edibility: the app shows the warning itself, it does not rely on the model.
 export const EDIBILITY_RE = /(mangi|commestibil|velenos|tossic|cucinar|si pu[oò] mangiare|edible|\beat\b|eating|poison|toxic|safe to|cook)/i;
 
 const WASM = { default: new URL('./vendor/wllama/wllama.wasm', import.meta.url).href };
-let wllama = new Wllama(WASM, { allowOffline: true, suppressNativeLog: true });
+const newWllama = () => new Wllama(WASM, { allowOffline: true, suppressNativeLog: true });
+let wllama = newWllama();
+let loadedId = null;
 
-export async function isCached() {
+export async function isCached(id) {
   const entries = await wllama.cacheManager.list();
-  return entries.some((e) => e.metadata?.originalURL === MODEL_URL);
+  return entries.some((e) => e.metadata?.originalURL === MODELS[id].url);
 }
 
-export async function load(onProgress) {
-  if (wllama.isModelLoaded()) return;
+export async function load(id, onProgress) {
+  if (loadedId === id) return;
+  if (loadedId) {
+    await wllama.exit();
+    wllama = newWllama();
+    loadedId = null;
+  }
   // Ask the browser not to evict the model when it needs space.
   await navigator.storage?.persist?.();
-  await wllama.loadModelFromUrl(MODEL_URL, {
+  await wllama.loadModelFromUrl(MODELS[id].url, {
     n_ctx: 2048,
     n_gpu_layers: 0, // CPU only: no GPU driver resets
     // The Snapdragon 870 has 4 fast cores: more threads would land on the slow ones.
@@ -48,24 +58,40 @@ export async function load(onProgress) {
       text: `${Math.round(loaded / 1e6)} / ${Math.round(total / 1e6)} MB`,
     }),
   });
+  loadedId = id;
 }
 
-export async function remove() {
-  if (wllama.isModelLoaded()) await wllama.exit();
-  await wllama.cacheManager.delete(MODEL_URL);
-  wllama = new Wllama(WASM, { allowOffline: true, suppressNativeLog: true });
+export async function remove(id) {
+  if (loadedId === id) {
+    await wllama.exit();
+    wllama = newWllama();
+    loadedId = null;
+  }
+  await wllama.cacheManager.delete(MODELS[id].url);
 }
 
-export const isLoaded = () => wllama.isModelLoaded();
+export const isLoaded = (id) => (id ? loadedId === id : loadedId !== null);
 
 // Threads actually in use (1 means no cross-origin isolation: slower).
-export const threads = () => (wllama.isModelLoaded() ? wllama.getNumThreads() : 0);
+export const threads = () => (loadedId ? wllama.getNumThreads() : 0);
 
-// One question at a time, with a compact context: prompt processing on a phone CPU
-// takes time for every token.
-export async function ask(question, context, onToken) {
+// Small models open with "Sure, here is my answer:": drop that first line.
+const PREAMBLE_RE = /^\s*(certo|ecco|ok|okay|sure|here|of course)\b[^\n]*(\n+|$)/i;
+const clean = (text) => text.replace(PREAMBLE_RE, '').trimStart();
+
+// One question at a time. What makes a 1B model behave:
+//  - instructions in the user's language;
+//  - data as plain sentences already interpreted by the radar (no scores to misread);
+//  - one worked example of the expected answer;
+//  - no mention of topics it should not bring up by itself.
+export async function ask(question, situation, onToken) {
+  const messages = [
+    { role: 'user', content: `${t('llm.instructions')}\n\n${t('llm.example.situation')}\n\n${t('llm.question')}: ${t('llm.example.q')}` },
+    { role: 'assistant', content: t('llm.example.a') },
+    { role: 'user', content: `${situation}\n\n${t('llm.question')}: ${question}` },
+  ];
   const stream = await wllama.createChatCompletion({
-    messages: [{ role: 'user', content: `${INSTRUCTIONS}\n\n${context}\n\n${question}` }],
+    messages,
     stream: true,
     temperature: 0.3, // less creative: sticks closer to the data
     max_tokens: MAX_ANSWER_TOKENS,
@@ -73,7 +99,7 @@ export async function ask(question, context, onToken) {
   let text = '';
   for await (const chunk of stream) {
     text += chunk.choices?.[0]?.delta?.content ?? '';
-    onToken(text);
+    onToken(clean(text));
   }
-  return { text };
+  return { text: clean(text) };
 }

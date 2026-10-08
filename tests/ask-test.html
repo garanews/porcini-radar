@@ -3,35 +3,35 @@
 <title>Ask test</title>
 <pre id="out">running…</pre>
 <script type="module">
-  // Runs the app's real LLM path (llm.js + worker) with a realistic compact context.
-  // Open with ?lang=it or ?lang=en. Lines are also POSTed to /log for a local test server.
+  // Runs the app's real LLM path (llm.js) with a realistic situation and times it.
+  // ?lang=it|en, ?model=gemma3-1b|gemma2-2b. Lines are also POSTed to /log for a local test server.
   import * as llm from '../llm.js';
   import { t, fmtDay } from '../i18n.js';
   const out = document.getElementById('out');
   const log = (s) => { out.textContent += '\n' + s; fetch('/log', { method: 'POST', body: s }).catch(() => {}); };
+  const q = new URLSearchParams(location.search);
+  const model = llm.MODELS[q.get('model')] ? q.get('model') : llm.DEFAULT_MODEL;
 
-  const context = [
+  // Busto Garolfo-like lowland spot with little rain, plus two saved spots and a diary.
+  const situation = [
     t('ctx.today', { day: fmtDay('2026-10-08') }),
+    t('ctx.here', { elev: 205, verdict: t('verdict.poor'), why: [t('reason.littleRain', { mm: 13 }), t('reason.temp', { t: '18.2' }) + t('reason.temp.warm')].join('; ') }),
+    t('verdict.lowland'),
     t('ctx.spots'),
-    t('ctx.spot', { name: 'Faggeta del Monte Penna', elev: 1180, today: 12, bestDay: fmtDay('2026-10-17'), best: 100, why: t('reason.bigRain', { mm: 68, day: fmtDay('2026-10-05'), days: 3 }) }),
-    t('ctx.spot', { name: 'Castagneto Borgotaro', elev: 620, today: 30, bestDay: fmtDay('2026-10-16'), best: 86, why: t('reason.bigRain', { mm: 55, day: fmtDay('2026-10-05'), days: 3 }) }),
-    t('ctx.spot', { name: 'Abetaia Passo Cento Croci', elev: 1050, today: 8, bestDay: fmtDay('2026-10-18'), best: 92, why: t('reason.littleRain', { mm: 4 }) }),
-    t('ctx.diary', { outings: 4, total: 23, recent: [
-      t('ctx.entry', { day: fmtDay('2026-10-04'), n: 9, habitat: t('habitat.beech'), score: t('ctx.score', { score: 81 }) }),
-      t('ctx.entry', { day: fmtDay('2026-09-27'), n: 2, habitat: t('habitat.chestnut'), score: t('ctx.score', { score: 35 }) }),
-      t('ctx.entry', { day: fmtDay('2026-09-20'), n: 12, habitat: t('habitat.fir'), score: '' }),
-    ].join('; ') }),
+    t('ctx.spot', { name: 'Faggeta del Monte Penna', elev: 1180, label: t('label.low').toLowerCase(), bestDay: fmtDay('2026-10-17'), bestLabel: t('label.top').toLowerCase() }),
+    t('ctx.spot', { name: 'Castagneto Borgotaro', elev: 620, label: t('label.maybe').toLowerCase(), bestDay: fmtDay('2026-10-16'), bestLabel: t('label.top').toLowerCase() }),
+    t('ctx.diary', { outings: 4, total: 23, recent: t('ctx.entry', { day: fmtDay('2026-10-04'), n: 9, habitat: t('habitat.beech').toLowerCase() }) }),
   ].join('\n');
 
   try {
     let t0 = performance.now();
-    await llm.load(() => {});
-    log(`loaded in ${((performance.now() - t0) / 1000).toFixed(1)} s, threads ${llm.threads()}, isolated ${window.crossOriginIsolated}`);
-    for (const key of ['chip.whereQ', 'chip.hereQ']) {
+    await llm.load(model, () => {});
+    log(`${model} loaded in ${((performance.now() - t0) / 1000).toFixed(1)} s, threads ${llm.threads()}, isolated ${window.crossOriginIsolated}`);
+    for (const question of [t('llm.example.q'), t('chip.whereQ')]) {
       t0 = performance.now();
       let first = 0;
-      const { text } = await llm.ask(t(key), context, () => { first ||= performance.now(); });
-      log(`Q: ${t(key)}\nfirst token after ${((first - t0) / 1000).toFixed(1)} s, total ${((performance.now() - t0) / 1000).toFixed(1)} s\nA: ${text}\n`);
+      const { text } = await llm.ask(question, situation, () => { first ||= performance.now(); });
+      log(`Q: ${question}\nfirst token after ${((first - t0) / 1000).toFixed(1)} s, total ${((performance.now() - t0) / 1000).toFixed(1)} s\nA: ${text}\n`);
     }
   } catch (e) {
     log('ERROR ' + (e?.message ?? e));

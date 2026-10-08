@@ -304,23 +304,41 @@ $('#btn-export').addEventListener('click', async () => {
 
 // ---------- Ask (local LLM) ----------
 
-$('#model-name').textContent = llm.MODEL_NAME;
+// Model menu: the choice is remembered on this phone (a convenience; the default works without it).
+const modelSelect = $('#model-select');
+for (const [id, m] of Object.entries(llm.MODELS)) modelSelect.add(new Option(t(m.label), id));
+try { const saved = localStorage.getItem('model'); if (llm.MODELS[saved]) modelSelect.value = saved; } catch {}
+if (!llm.MODELS[modelSelect.value]) modelSelect.value = llm.DEFAULT_MODEL;
+
+function setAskEnabled(on) {
+  $('#ask-input').disabled = !on;
+  $('#ask-form button').disabled = !on;
+}
 
 async function refreshModelStatus() {
+  const id = modelSelect.value;
   const status = $('#model-status');
-  const cached = await llm.isCached().catch(() => false);
+  const cached = await llm.isCached(id).catch(() => false);
   $('#btn-remove').hidden = !cached;
-  if (llm.isLoaded()) return;
+  if (llm.isLoaded(id)) {
+    $('#btn-load').disabled = true;
+    setAskEnabled(true);
+    return;
+  }
+  setAskEnabled(false);
+  $('#btn-load').disabled = false;
   $('#btn-load').textContent = t(cached ? 'ask.loadCached' : 'ask.loadDownload');
   status.textContent = t(cached ? 'ask.cached' : 'ask.notCached');
 }
 
+modelSelect.addEventListener('change', () => {
+  try { localStorage.setItem('model', modelSelect.value); } catch {}
+  refreshModelStatus();
+});
+
 $('#btn-remove').addEventListener('click', async () => {
   if (!confirm(t('ask.removeConfirm'))) return;
-  await llm.remove();
-  $('#ask-input').disabled = true;
-  $('#ask-form button').disabled = true;
-  $('#btn-load').disabled = false;
+  await llm.remove(modelSelect.value);
   $('#model-status').textContent = t('ask.removed');
   refreshModelStatus();
 });
@@ -329,18 +347,19 @@ $('#btn-load').addEventListener('click', async () => {
   const bar = $('#model-progress');
   const status = $('#model-status');
   $('#btn-load').disabled = true;
+  modelSelect.disabled = true;
   bar.hidden = false;
   try {
-    await llm.load((p) => { bar.value = p.progress; status.textContent = p.text; });
+    await llm.load(modelSelect.value, (p) => { bar.value = p.progress; status.textContent = p.text; });
     status.textContent = t('ask.ready', { threads: llm.threads() });
     bar.hidden = true;
-    $('#ask-input').disabled = false;
-    $('#ask-form button').disabled = false;
+    setAskEnabled(true);
   } catch (e) {
     console.error(e);
     status.textContent = t('ask.loadError', { err: errText(e) });
     $('#btn-load').disabled = false;
   }
+  modelSelect.disabled = false;
 });
 
 // Before each question: the radar at the user's current position, so the model answers about
@@ -363,8 +382,9 @@ async function refreshHere() {
   }
 }
 
-// Compact on purpose: on a phone CPU every prompt token costs time before the answer starts.
-// So: the current position, the 3 saved spots with the best outlook, a short diary summary.
+// The "situation" the model reads. A 1B model misreads scores, so the radar's conclusion goes
+// in already written out as plain sentences. Compact on purpose: on a phone CPU every prompt
+// token costs time. So: the current position, the 3 best saved spots, a short diary summary.
 function buildContext() {
   const lines = [t('ctx.today', { day: fmtDay(todayIso()) })];
   const hereWx = herePlace && forecasts.get('here');
@@ -372,20 +392,11 @@ function buildContext() {
   if (hereDays.length) {
     const today = hereDays[0];
     const best = hereDays.reduce((a, b) => (b.score > a.score ? b : a));
-    lines.push(t('ctx.here', {
-      elev: hereWx.elevation,
-      today: today.score,
-      label: today.label.text,
-      bestDay: fmtDay(best.date),
-      best: best.score,
-      why: today.reasons.join('; '),
-    }));
-    // A 1B model misreads numbers: the radar's conclusion goes in already written out.
     const verdict = today.score >= 50 ? t('verdict.go')
       : best.score >= 50 ? t('verdict.wait', { day: fmtDay(best.date) })
       : t('verdict.poor');
-    const lowland = hereWx.elevation < 400 ? ` ${t('verdict.lowland')}` : '';
-    lines.push(t('ctx.verdict', { verdict: verdict + lowland }));
+    lines.push(t('ctx.here', { elev: hereWx.elevation, verdict, why: today.reasons.join('; ') }));
+    if (hereWx.elevation < 400) lines.push(t('verdict.lowland'));
   } else {
     lines.push(t('ctx.noHere'));
   }
@@ -402,10 +413,9 @@ function buildContext() {
       lines.push(t('ctx.spot', {
         name: p.name.slice(0, 30),
         elev: wx.elevation,
-        today: days[0].score,
+        label: days[0].label.text.toLowerCase(),
         bestDay: fmtDay(best.date),
-        best: best.score,
-        why: days[0].reasons[0],
+        bestLabel: best.label.text.toLowerCase(),
       }));
     }
   }
@@ -414,12 +424,9 @@ function buildContext() {
     const recent = entries.slice(0, 3).map((en) => t('ctx.entry', {
       day: fmtDay(en.date),
       n: en.found,
-      habitat: habitatName(en.habitat),
-      score: en.radar?.score != null ? t('ctx.score', { score: en.radar.score }) : '',
+      habitat: habitatName(en.habitat).toLowerCase(),
     }));
     lines.push(t('ctx.diary', { outings: entries.length, total, recent: recent.join('; ') }));
-  } else {
-    lines.push(t('ctx.noDiary'));
   }
   return lines.join('\n');
 }
@@ -434,7 +441,7 @@ function addMsg(cls, text) {
 }
 
 async function send(question) {
-  if (!llm.isLoaded() || !question) return;
+  if (!llm.isLoaded(modelSelect.value) || !question) return;
   addMsg('user', question);
   if (llm.EDIBILITY_RE.test(question)) addMsg('bot alert', t('ask.edibility'));
   const out = addMsg('bot', '📍…');
