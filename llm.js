@@ -7,9 +7,13 @@ import { lang } from './i18n.js';
 // when a model exceeds what the GPU is allowed (it did with the default 4096).
 // Gemma 3 1B was dropped: WebLLM's build of it degenerates into garbage on real prompts.
 // Llama 3.2 1B is a lighter fallback (`?model=Llama-3.2-1B-Instruct-q4f16_1-MLC`), weaker with the data.
+// The prompt is processed in chunks of this many tokens (the compiled default is 1024).
+// Shorter GPU dispatches: on Android a long one made the driver reset the GPU
+// ("A valid external Instance reference no longer exists"). Needs the patch in vendor/web-llm.js.
+const PREFILL_CHUNK = 64;
 const CANDIDATES = {
-  'gemma-2-2b-it-q4f16_1-MLC': { name: 'Gemma 2 2B', opts: { context_window_size: 1024, sliding_window_size: -1 } },
-  'Llama-3.2-1B-Instruct-q4f16_1-MLC': { name: 'Llama 3.2 1B', opts: { context_window_size: 1024 } },
+  'gemma-2-2b-it-q4f16_1-MLC': { name: 'Gemma 2 2B', opts: { context_window_size: 1024, sliding_window_size: -1, prefill_chunk_size: PREFILL_CHUNK } },
+  'Llama-3.2-1B-Instruct-q4f16_1-MLC': { name: 'Llama 3.2 1B', opts: { context_window_size: 1024, prefill_chunk_size: PREFILL_CHUNK } },
 };
 const wantedModel = new URLSearchParams(location.search).get('model');
 export const MODEL_ID = CANDIDATES[wantedModel] ? wantedModel : 'gemma-2-2b-it-q4f16_1-MLC';

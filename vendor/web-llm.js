@@ -10473,6 +10473,11 @@ class LLMChatPipeline {
         this.params = this.tvm.detachFromCurrentScope(this.tvm.getParamsFromCacheByName(paramNames));
         // 4. Read in compilation configurations from metadata
         this.prefillChunkSize = metadata.prefill_chunk_size;
+        // [Porcini Radar patch] Allow a smaller prefill chunk from the chat config: shorter GPU
+        // dispatches, so mobile GPU drivers do not reset the device on a long prompt.
+        if (config.prefill_chunk_size > 0 && config.prefill_chunk_size < this.prefillChunkSize) {
+            this.prefillChunkSize = config.prefill_chunk_size;
+        }
         log.info("Using prefillChunkSize: ", this.prefillChunkSize);
         if (this.prefillChunkSize <= 0) {
             throw new MinValueError("prefill_chunk_size", 0);
