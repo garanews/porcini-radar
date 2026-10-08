@@ -7,8 +7,9 @@
   import { scoreDays, fetchWeather } from '../radar.js';
   const out = document.getElementById('out');
   try {
-    // Borgotaro (Parma), a classic porcini area
-    const wx = await fetchWeather({ lat: 44.49, lon: 9.77 });
+    // Default: Borgotaro (Parma), a classic porcini area. ?lat=&lon= for another spot.
+    const q = new URLSearchParams(location.search);
+    const wx = await fetchWeather({ lat: Number(q.get('lat') ?? 44.49), lon: Number(q.get('lon') ?? 9.77) });
     const days = scoreDays(wx.daily, new Date().toLocaleDateString('sv-SE'));
     out.textContent = `elevation ${wx.elevation} m\n` +
       days.map((d) => `${d.date} ${String(d.score).padStart(3)} ${d.label.text.padEnd(9)} | ${d.reasons.join(' | ')}`).join('\n');

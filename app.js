@@ -48,13 +48,13 @@ if ('serviceWorker' in navigator) {
 
 // ---------- GPS ----------
 
-function getPosition() {
+function getPosition({ timeout = 30000, maximumAge = 60000 } = {}) {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) return reject(new Error(t('gps.unavailable')));
     navigator.geolocation.getCurrentPosition(
       (p) => resolve({ lat: p.coords.latitude, lon: p.coords.longitude, acc: Math.round(p.coords.accuracy) }),
       (e) => reject(new Error(t(e.code === 1 ? 'gps.denied' : 'gps.notFound'))),
-      { enableHighAccuracy: true, timeout: 30000, maximumAge: 60000 },
+      { enableHighAccuracy: true, timeout, maximumAge },
     );
   });
 }
@@ -343,12 +343,46 @@ $('#btn-load').addEventListener('click', async () => {
   }
 });
 
+// Before each question: the radar at the user's current position, so the model answers about
+// where they are instead of inventing the weather. Offline it borrows the forecast of a saved
+// spot within 5 km. Without GPS the question goes on without it.
+async function refreshHere() {
+  try {
+    // A position up to 10 minutes old is fine, and the question waits at most 10 s for the GPS.
+    const pos = await getPosition({ timeout: 10000, maximumAge: 600000 });
+    herePlace = { id: 'here', name: t('radar.hereName'), ...pos };
+    if (navigator.onLine) {
+      await loadForecast(herePlace, true);
+      return;
+    }
+    forecasts.delete('here');
+    const near = places.map((p) => ({ p, d: distanceKm(p, pos) })).sort((a, b) => a.d - b.d)[0];
+    if (near && near.d < 5 && forecasts.get(near.p.id)) forecasts.set('here', forecasts.get(near.p.id));
+  } catch (e) {
+    console.warn('No position for the question:', e);
+  }
+}
+
 // Compact on purpose: on a phone CPU every prompt token costs time before the answer starts.
-// So: the 3 spots with the best outlook, one line each, and a short diary summary.
+// So: the current position, the 3 saved spots with the best outlook, a short diary summary.
 function buildContext() {
   const lines = [t('ctx.today', { day: fmtDay(todayIso()) })];
-  const all = herePlace && forecasts.get('here') ? [herePlace, ...places] : places;
-  const spots = all
+  const hereWx = herePlace && forecasts.get('here');
+  const hereDays = hereWx ? scoreDays(hereWx.daily, todayIso()) : [];
+  if (hereDays.length) {
+    const best = hereDays.reduce((a, b) => (b.score > a.score ? b : a));
+    lines.push(t('ctx.here', {
+      elev: hereWx.elevation,
+      today: hereDays[0].score,
+      label: hereDays[0].label.text,
+      bestDay: fmtDay(best.date),
+      best: best.score,
+      why: hereDays[0].reasons.join('; '),
+    }));
+  } else {
+    lines.push(t('ctx.noHere'));
+  }
+  const spots = places
     .map((p) => ({ p, wx: forecasts.get(p.id) }))
     .map(({ p, wx }) => ({ p, wx, days: wx ? scoreDays(wx.daily, todayIso()) : [] }))
     .filter((s) => s.days.length)
@@ -367,8 +401,6 @@ function buildContext() {
         why: days[0].reasons[0],
       }));
     }
-  } else {
-    lines.push(t('ctx.noPlaces'));
   }
   if (entries.length) {
     const total = entries.reduce((n, en) => n + en.found, 0);
@@ -398,8 +430,10 @@ async function send(question) {
   if (!llm.isLoaded() || !question) return;
   addMsg('user', question);
   if (llm.EDIBILITY_RE.test(question)) addMsg('bot alert', t('ask.edibility'));
-  const out = addMsg('bot', '…');
+  const out = addMsg('bot', '📍…');
   $('#ask-input').disabled = true;
+  await refreshHere();
+  out.textContent = '…';
   try {
     await llm.ask(question.slice(0, 300), buildContext(), (text) => { out.textContent = text; });
   } catch (e) {
