@@ -84,6 +84,9 @@ const dict = {
 
     'ask.warning': '⚠️ L\'AI <strong>non</strong> dice se un fungo è commestibile. Prima di mangiarli falli sempre controllare all\'<strong>Ispettorato Micologico dell\'ASL</strong> (è gratis).',
     'ask.modelInfo': 'Modelli open-weight Gemma di Google: girano tutti sul telefono. Scegli in base al telefono.',
+    'storage.title': '💾 Modelli scaricati',
+    'storage.none': 'Nessun modello scaricato.',
+    'storage.total': 'Spazio usato dall\'app: {used} (disponibile: {free})',
     'model.gemma3-1b': 'Gemma 3 1B · veloce (~720 MB)',
     'model.gemma2-2b': 'Gemma 2 2B · più bravo, più lento (~1,7 GB)',
     'ask.load': 'Carica modello',
@@ -206,6 +209,9 @@ const dict = {
 
     'ask.warning': '⚠️ The AI does <strong>not</strong> tell you whether a mushroom is edible. Before eating any, always have them checked by a <strong>local mycological inspection service</strong> (in Italy: the free ASL Ispettorato Micologico).',
     'ask.modelInfo': 'Google\'s open-weight Gemma models: they all run on the phone. Pick one for your phone.',
+    'storage.title': '💾 Downloaded models',
+    'storage.none': 'No model downloaded.',
+    'storage.total': 'Space used by the app: {used} (available: {free})',
     'model.gemma3-1b': 'Gemma 3 1B · fast (~720 MB)',
     'model.gemma2-2b': 'Gemma 2 2B · smarter, slower (~1.7 GB)',
     'ask.load': 'Load model',

@@ -34,6 +34,22 @@ const newWllama = () => new Wllama(WASM, { allowOffline: true, suppressNativeLog
 let wllama = newWllama();
 let loadedId = null;
 
+// Models downloaded on this phone: [{ id, name, size }]. Files not in MODELS keep id null.
+export async function downloaded() {
+  const entries = await wllama.cacheManager.list();
+  return entries.map((e) => {
+    const id = Object.keys(MODELS).find((k) => MODELS[k].url === e.metadata?.originalURL) ?? null;
+    return { id, name: id ? MODELS[id].name : e.name, size: e.size, key: e.metadata?.originalURL ?? e.name };
+  });
+}
+
+// Deletes a downloaded file by its key (from downloaded()), unloading it first if in use.
+export async function removeFile(key) {
+  const id = Object.keys(MODELS).find((k) => MODELS[k].url === key);
+  if (id) return remove(id);
+  await wllama.cacheManager.delete(key);
+}
+
 export async function isCached(id) {
   const entries = await wllama.cacheManager.list();
   return entries.some((e) => e.metadata?.originalURL === MODELS[id].url);

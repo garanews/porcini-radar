@@ -331,6 +331,27 @@ async function refreshModelStatus() {
   status.textContent = t(cached ? 'ask.cached' : 'ask.notCached');
 }
 
+// What is downloaded on this phone, with sizes, each with its own delete button.
+const fmtMB = (bytes) => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.round(bytes / 1e6)} MB`);
+
+async function renderStorage() {
+  const files = await llm.downloaded().catch(() => []);
+  $('#storage-list').innerHTML = files.length
+    ? files.map((f) => `<li>${esc(f.name)} · ${fmtMB(f.size)} <button class="del" data-del-model="${esc(f.key)}">🗑️</button></li>`).join('')
+    : `<li class="muted">${t('storage.none')}</li>`;
+  const est = await navigator.storage?.estimate?.().catch(() => null);
+  $('#storage-total').textContent = est ? t('storage.total', { used: fmtMB(est.usage), free: fmtMB(est.quota - est.usage) }) : '';
+}
+
+$('#storage-list').addEventListener('click', async (e) => {
+  const key = e.target.dataset?.delModel;
+  if (!key || !confirm(t('ask.removeConfirm'))) return;
+  await llm.removeFile(key);
+  renderStorage();
+  refreshModelStatus();
+});
+$('#storage').addEventListener('toggle', () => { if ($('#storage').open) renderStorage(); });
+
 modelSelect.addEventListener('change', () => {
   try { localStorage.setItem('model', modelSelect.value); } catch {}
   refreshModelStatus();
@@ -341,6 +362,7 @@ $('#btn-remove').addEventListener('click', async () => {
   await llm.remove(modelSelect.value);
   $('#model-status').textContent = t('ask.removed');
   refreshModelStatus();
+  renderStorage();
 });
 
 $('#btn-load').addEventListener('click', async () => {
@@ -354,6 +376,7 @@ $('#btn-load').addEventListener('click', async () => {
     status.textContent = t('ask.ready', { threads: llm.threads() });
     bar.hidden = true;
     setAskEnabled(true);
+    renderStorage();
   } catch (e) {
     console.error(e);
     status.textContent = t('ask.loadError', { err: errText(e) });
