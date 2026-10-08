@@ -19,7 +19,9 @@ const LANGUAGE = lang === 'it' ? 'Italian' : 'English';
 
 // Small models open with greetings, invent missing facts and repeat every rule they are given:
 // each of those is forbidden or scoped explicitly.
-const INSTRUCTIONS = `You are an expert porcini forager advising a friend. Answer in ${LANGUAGE}, in at most 3 short sentences, based only on the data below (the porcini score comes from the rain and temperatures of the last weeks). Start directly with the advice: no greetings, do not introduce yourself. Do not invent weather or sightings that are not in the data; if data is missing, say so. Never say a mushroom is edible; only if the user asks about eating or identifying one, send them to the free ASL mycological inspection.`;
+// The radar's conclusion is computed in code and handed over written out: the model only has
+// to explain it in its own words and add a practical tip, which a 1B model does well.
+const INSTRUCTIONS = `You are an expert porcini forager advising a friend. Answer in ${LANGUAGE}, in at most 3 short sentences. First explain the RADAR CONCLUSION below in your own words, then add one practical tip on where to look (type of wood, altitude, slope). Start directly with the advice: no greetings, do not introduce yourself. Do not invent weather or sightings. Never say a mushroom is edible; only if the user asks about eating or identifying one, send them to the free ASL mycological inspection.`;
 
 // Questions about edibility: the app shows the warning itself, it does not rely only on the model.
 export const EDIBILITY_RE = /(mangi|commestibil|velenos|tossic|cucinar|si pu[oò] mangiare|edible|\beat\b|eating|poison|toxic|safe to|cook)/i;
@@ -65,7 +67,7 @@ export async function ask(question, context, onToken) {
   const stream = await wllama.createChatCompletion({
     messages: [{ role: 'user', content: `${INSTRUCTIONS}\n\n${context}\n\n${question}` }],
     stream: true,
-    temperature: 0.5,
+    temperature: 0.3, // less creative: sticks closer to the data
     max_tokens: MAX_ANSWER_TOKENS,
   });
   let text = '';

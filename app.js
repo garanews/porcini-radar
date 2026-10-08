@@ -370,15 +370,22 @@ function buildContext() {
   const hereWx = herePlace && forecasts.get('here');
   const hereDays = hereWx ? scoreDays(hereWx.daily, todayIso()) : [];
   if (hereDays.length) {
+    const today = hereDays[0];
     const best = hereDays.reduce((a, b) => (b.score > a.score ? b : a));
     lines.push(t('ctx.here', {
       elev: hereWx.elevation,
-      today: hereDays[0].score,
-      label: hereDays[0].label.text,
+      today: today.score,
+      label: today.label.text,
       bestDay: fmtDay(best.date),
       best: best.score,
-      why: hereDays[0].reasons.join('; '),
+      why: today.reasons.join('; '),
     }));
+    // A 1B model misreads numbers: the radar's conclusion goes in already written out.
+    const verdict = today.score >= 50 ? t('verdict.go')
+      : best.score >= 50 ? t('verdict.wait', { day: fmtDay(best.date) })
+      : t('verdict.poor');
+    const lowland = hereWx.elevation < 400 ? ` ${t('verdict.lowland')}` : '';
+    lines.push(t('ctx.verdict', { verdict: verdict + lowland }));
   } else {
     lines.push(t('ctx.noHere'));
   }
