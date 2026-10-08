@@ -32,7 +32,7 @@ So the app now runs **llama.cpp on the CPU** via wllama: it supports Gemma 3 pro
 ## Why it runs on the phone
 
 - **No signal in the woods.** A cloud API is useless where porcini grow.
-- **Secret spots stay secret.** No forager wants to send the exact coordinates of their spots to someone else's server. Here nothing leaves the phone: the only network calls are the weather download (coordinates rounded, no account) and the one-time model download.
+- **Secret spots stay secret.** No forager wants to send the exact coordinates of their spots to someone else's server. Spots, diary and photos never leave the phone, and the AI runs offline. The only network calls are the one-time model download and the weather download, which sends the spot's coordinates to Open-Meteo with no account attached.
 - **No cost, no account, no API key.**
 
 ## Safety
