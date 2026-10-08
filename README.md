@@ -10,15 +10,16 @@ Built for the DEV [Hacktoberfest Open-Source AI Challenge – Week 1: Touch Gras
 
 - **Radar** – estimates the porcini "flush" for the next 16 days at your spots, from rain and temperatures ([Open-Meteo](https://open-meteo.com/)). You save spots with the GPS while you are in the woods; at home you check them all.
 - **Diary** – log each outing with photo, GPS position, woodland type and how many porcini you found. Everything stays on the phone (IndexedDB) and works offline. Each entry also stores that day's radar score, so over time you can see whether the heuristic is right.
-- **Ask** – an open-weight LLM (Google **Gemma 2 2B**, via [WebLLM](https://github.com/mlc-ai/web-llm)) runs **inside the phone's browser** on WebGPU. It reads a compact summary of your forecasts and diary and gives advice, with no connection.
+- **Ask** – an open-weight LLM (Google **Gemma 3 1B**, Q4_0 GGUF, ~720 MB) runs **inside the phone's browser** on the CPU, through [wllama](https://github.com/ngxson/wllama) (llama.cpp compiled to WebAssembly). It reads a compact summary of your forecasts and diary and gives advice, with no connection.
 
-### Choosing a model that fits in a phone
+### Getting an LLM to run on a mid-range phone
 
-- **Gemma 2 2B** with the default 4096-token context crashed Chrome on a Poco F3 (out of GPU memory). With the context cut to 1024 tokens and a compact prompt (one question at a time) it needs about 1.6 GB.
-- **Gemma 3 1B** would be lighter, but WebLLM's build of it degenerates into garbage on real prompts (its config pairs an 8192 context with a 512 sliding window, which WebLLM cannot run).
-- **Llama 3.2 1B** works and is lighter, but it uses the data poorly and invents facts. It stays available as a fallback: add `?model=Llama-3.2-1B-Instruct-q4f16_1-MLC` to the URL.
+The target was a Poco F3 (Snapdragon 870). The first attempts used [WebLLM](https://github.com/mlc-ai/web-llm) on the GPU (WebGPU):
 
-[tests/ask-test.html](tests/ask-test.html) runs the app's prompt through the model to compare them.
+- **Gemma 2 2B** crashed Chrome with the default context (out of GPU memory); with a smaller context it loaded, but the GPU driver reset or froze the screen while answering.
+- **Gemma 3 1B** degenerated into garbage on real prompts: WebLLM cannot run its sliding-window attention (its config pairs an 8192 context with a 512 window).
+
+So the app now runs **llama.cpp on the CPU** via wllama: it supports Gemma 3 properly, and no GPU driver is involved. A service worker adds the cross-origin isolation headers (which GitHub Pages cannot set), so llama.cpp can use 4 CPU threads. [tests/ask-test.html](tests/ask-test.html) runs the app's prompt through the model and times it.
 
 ## Why it runs on the phone
 
@@ -48,11 +49,11 @@ It is a static site with no build step:
 python -m http.server 8000
 ```
 
-Then open http://localhost:8000. On a phone it needs HTTPS (for GPS, WebGPU and installing), e.g. GitHub Pages. Requirements for the AI: Chrome on Android 12+ with WebGPU. [tests/radar-test.html](tests/radar-test.html) scores real weather data for a sample spot.
+Then open http://localhost:8000. On a phone it needs HTTPS (for GPS, the service worker and installing), e.g. GitHub Pages. [tests/radar-test.html](tests/radar-test.html) scores real weather data for a sample spot.
 
 ## Stack, all open
 
-- [WebLLM](https://github.com/mlc-ai/web-llm) (Apache-2.0), vendored in `vendor/`
-- [Gemma 2](https://ai.google.dev/gemma), Google's open-weight model ([Gemma Terms of Use](https://ai.google.dev/gemma/terms)), 4-bit quantized by MLC
+- [wllama](https://github.com/ngxson/wllama) 3.8.1 (MIT), llama.cpp for the browser, vendored in `vendor/wllama/`
+- [Gemma 3 1B instruct](https://ai.google.dev/gemma), Google's open-weight model ([Gemma Terms of Use](https://ai.google.dev/gemma/terms)), [Q4_0 GGUF by Unsloth](https://huggingface.co/unsloth/gemma-3-1b-it-GGUF)
 - Weather data by [Open-Meteo](https://open-meteo.com/) (CC BY 4.0)
 - Plain HTML, CSS and JavaScript, PWA with a service worker

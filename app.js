@@ -36,7 +36,15 @@ addEventListener('online', updateNet);
 addEventListener('offline', updateNet);
 updateNet();
 
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+// The service worker also adds the cross-origin isolation headers that let llama.cpp use
+// several CPU threads. A page loaded before the current worker took over (first visit, or an
+// update) is not isolated: reload once when the new worker takes control.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js');
+  if (!window.crossOriginIsolated) {
+    navigator.serviceWorker.addEventListener('controllerchange', () => location.reload(), { once: true });
+  }
+}
 
 // ---------- GPS ----------
 
@@ -300,11 +308,6 @@ $('#model-name').textContent = llm.MODEL_NAME;
 
 async function refreshModelStatus() {
   const status = $('#model-status');
-  if (!llm.hasWebGPU()) {
-    status.textContent = t('ask.noWebGPU');
-    $('#btn-load').disabled = true;
-    return;
-  }
   const cached = await llm.isCached().catch(() => false);
   $('#btn-remove').hidden = !cached;
   if (llm.isLoaded()) return;
@@ -329,7 +332,7 @@ $('#btn-load').addEventListener('click', async () => {
   bar.hidden = false;
   try {
     await llm.load((p) => { bar.value = p.progress; status.textContent = p.text; });
-    status.textContent = t('ask.ready');
+    status.textContent = t('ask.ready', { threads: llm.threads() });
     bar.hidden = true;
     $('#ask-input').disabled = false;
     $('#ask-form button').disabled = false;
@@ -340,7 +343,7 @@ $('#btn-load').addEventListener('click', async () => {
   }
 });
 
-// Compact on purpose: the model has 1024 tokens for instructions, data, question and answer.
+// Compact on purpose: on a phone CPU every prompt token costs time before the answer starts.
 // So: the 3 spots with the best outlook, one line each, and a short diary summary.
 function buildContext() {
   const lines = [t('ctx.today', { day: fmtDay(todayIso()) })];

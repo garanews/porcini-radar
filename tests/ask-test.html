@@ -24,12 +24,14 @@
   ].join('\n');
 
   try {
+    let t0 = performance.now();
     await llm.load(() => {});
-    log('loaded');
+    log(`loaded in ${((performance.now() - t0) / 1000).toFixed(1)} s, threads ${llm.threads()}, isolated ${window.crossOriginIsolated}`);
     for (const key of ['chip.whereQ', 'chip.hereQ']) {
-      const t0 = performance.now();
-      const { text, usage } = await llm.ask(t(key), context, () => {});
-      log(`Q: ${t(key)}\nprompt ${usage?.prompt_tokens} + answer ${usage?.completion_tokens} tokens, ${((performance.now() - t0) / 1000).toFixed(1)} s\nA: ${text}\n`);
+      t0 = performance.now();
+      let first = 0;
+      const { text } = await llm.ask(t(key), context, () => { first ||= performance.now(); });
+      log(`Q: ${t(key)}\nfirst token after ${((first - t0) / 1000).toFixed(1)} s, total ${((performance.now() - t0) / 1000).toFixed(1)} s\nA: ${text}\n`);
     }
   } catch (e) {
     log('ERROR ' + (e?.message ?? e));

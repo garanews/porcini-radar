@@ -1,6 +1,9 @@
 // Service worker: keeps the app available offline, in the woods with no signal.
-// The AI model does not go through here: WebLLM stores it in the browser cache by itself.
-const VERSION = 'v6';
+// The AI model does not go through here: wllama stores it in the browser storage by itself.
+//
+// It also adds the cross-origin isolation headers (COOP/COEP), which GitHub Pages cannot set:
+// they enable SharedArrayBuffer, so llama.cpp can run on several CPU threads.
+const VERSION = 'v7';
 const SHELL = [
   './',
   'index.html',
@@ -10,8 +13,8 @@ const SHELL = [
   'radar.js',
   'db.js',
   'llm.js',
-  'llm-worker.js',
-  'vendor/web-llm.js',
+  'vendor/wllama/index.js',
+  'vendor/wllama/wllama.wasm',
   'manifest.webmanifest',
   'icons/icon.svg',
   'icons/icon-192.png',
@@ -30,6 +33,15 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+function withIsolation(res) {
+  if (!res || res.status === 0) return res;
+  const headers = new Headers(res.headers);
+  headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+  // "credentialless" still allows the cross-origin fetches (Open-Meteo, Hugging Face).
+  headers.set('Cross-Origin-Embedder-Policy', 'credentialless');
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
+
 // App files only: network first (to get updates), cache when there is no signal.
 // `no-cache` revalidates with the server, so an update never mixes old and new files.
 self.addEventListener('fetch', (e) => {
@@ -40,8 +52,8 @@ self.addEventListener('fetch', (e) => {
       .then((res) => {
         const copy = res.clone();
         caches.open(VERSION).then((c) => c.put(e.request, copy));
-        return res;
+        return withIsolation(res);
       })
-      .catch(() => caches.match(e.request, { ignoreSearch: true })),
+      .catch(() => caches.match(e.request, { ignoreSearch: true }).then(withIsolation)),
   );
 });

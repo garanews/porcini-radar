@@ -1,85 +1,74 @@
-// Open-weight LLM running inside the phone's browser (WebLLM + WebGPU).
-// The model is downloaded once, stays in the browser cache and then works offline.
+// Open-weight LLM running inside the phone's browser, on the CPU.
+// wllama is llama.cpp compiled to WebAssembly: the model is downloaded once, stays in the
+// browser storage and then works offline.
+//
+// Why CPU and not WebGPU: with WebLLM on a Poco F3 (Adreno 650) the GPU driver reset or
+// froze the screen while answering, and WebLLM's Gemma 3 build degenerated into garbage.
+// llama.cpp runs Gemma 3 correctly (sliding-window attention included) and a 1B model is
+// fast enough on the phone's CPU cores.
+import { Wllama } from './vendor/wllama/index.js';
 import { lang } from './i18n.js';
 
-// Gemma 2 2B, Google's open-weight model, 4-bit quantized (~1.4 GB download).
-// The context is cut to 1024 tokens to save GPU memory: Chrome on Android kills the tab
-// when a model exceeds what the GPU is allowed (it did with the default 4096).
-// Gemma 3 1B was dropped: WebLLM's build of it degenerates into garbage on real prompts.
-// Llama 3.2 1B is a lighter fallback (`?model=Llama-3.2-1B-Instruct-q4f16_1-MLC`), weaker with the data.
-// The prompt is processed in chunks of this many tokens (the compiled default is 1024).
-// Shorter GPU dispatches: on Android a long one made the driver reset the GPU
-// ("A valid external Instance reference no longer exists"). Needs the patch in vendor/web-llm.js.
-const PREFILL_CHUNK = 64;
-const CANDIDATES = {
-  'gemma-2-2b-it-q4f16_1-MLC': { name: 'Gemma 2 2B', opts: { context_window_size: 1024, sliding_window_size: -1, prefill_chunk_size: PREFILL_CHUNK } },
-  'Llama-3.2-1B-Instruct-q4f16_1-MLC': { name: 'Llama 3.2 1B', opts: { context_window_size: 1024, prefill_chunk_size: PREFILL_CHUNK } },
-};
-const wantedModel = new URLSearchParams(location.search).get('model');
-export const MODEL_ID = CANDIDATES[wantedModel] ? wantedModel : 'gemma-2-2b-it-q4f16_1-MLC';
-export const MODEL_NAME = CANDIDATES[MODEL_ID].name;
-const CHAT_OPTS = CANDIDATES[MODEL_ID].opts;
-export const MAX_ANSWER_TOKENS = 160;
+// Gemma 3 1B instruct, Google's open-weight model, 4-bit Q4_0 GGUF (fastest on ARM CPUs).
+export const MODEL_NAME = 'Gemma 3 1B';
+const MODEL_URL = 'https://huggingface.co/unsloth/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_0.gguf';
+export const MAX_ANSWER_TOKENS = 200;
 
 const LANGUAGE = lang === 'it' ? 'Italian' : 'English';
 
-// Kept short on purpose: instructions, data, question and answer share the 1024-token context.
-const INSTRUCTIONS = `You are Porcini Radar, a friendly expert porcini forager. Answer in ${LANGUAGE}, in 3-4 short sentences, using the data below. Never say a mushroom is edible or safe: for that, send the user to the free ASL mycological inspection (Ispettorato Micologico).`;
+const INSTRUCTIONS = `You are Porcini Radar, a friendly expert porcini forager. Answer in ${LANGUAGE}, in 3-5 short sentences, using the data below. Never say a mushroom is edible or safe: for that, send the user to the free ASL mycological inspection (Ispettorato Micologico).`;
 
 // Questions about edibility: the app shows the warning itself, it does not rely only on the model.
 export const EDIBILITY_RE = /(mangi|commestibil|velenos|tossic|cucinar|si pu[oò] mangiare|edible|\beat\b|eating|poison|toxic|safe to|cook)/i;
 
-let engine = null;
-
-export const hasWebGPU = () => 'gpu' in navigator;
+const WASM = { default: new URL('./vendor/wllama/wllama.wasm', import.meta.url).href };
+let wllama = new Wllama(WASM, { allowOffline: true, suppressNativeLog: true });
 
 export async function isCached() {
-  const webllm = await import('./vendor/web-llm.js');
-  return webllm.hasModelInCache(MODEL_ID);
+  const entries = await wllama.cacheManager.list();
+  return entries.some((e) => e.metadata?.originalURL === MODEL_URL);
 }
 
 export async function load(onProgress) {
-  if (engine) return;
-  const webllm = await import('./vendor/web-llm.js');
+  if (wllama.isModelLoaded()) return;
   // Ask the browser not to evict the model when it needs space.
   await navigator.storage?.persist?.();
-  engine = await webllm.CreateWebWorkerMLCEngine(
-    new Worker(new URL('./llm-worker.js', import.meta.url), { type: 'module' }),
-    MODEL_ID,
-    { initProgressCallback: (p) => onProgress(p) },
-    CHAT_OPTS,
-  );
+  await wllama.loadModelFromUrl(MODEL_URL, {
+    n_ctx: 2048,
+    n_gpu_layers: 0, // CPU only: no GPU driver resets
+    // The Snapdragon 870 has 4 fast cores: more threads would land on the slow ones.
+    n_threads: Math.max(1, Math.min(4, navigator.hardwareConcurrency || 4)),
+    progressCallback: ({ loaded, total }) => onProgress({
+      progress: total ? loaded / total : 0,
+      text: `${Math.round(loaded / 1e6)} / ${Math.round(total / 1e6)} MB`,
+    }),
+  });
 }
 
 export async function remove() {
-  if (engine) {
-    await engine.unload();
-    engine = null;
-  }
-  const webllm = await import('./vendor/web-llm.js');
-  await webllm.deleteModelAllInfoInCache(MODEL_ID);
+  if (wllama.isModelLoaded()) await wllama.exit();
+  await wllama.cacheManager.delete(MODEL_URL);
+  wllama = new Wllama(WASM, { allowOffline: true, suppressNativeLog: true });
 }
 
-export const isLoaded = () => engine !== null;
+export const isLoaded = () => wllama.isModelLoaded();
 
-// One question at a time (no chat history): the small context has no room for it.
-// context: short text with forecasts and diary. onToken gets the partial answer.
+// Threads actually in use (1 means no cross-origin isolation: slower).
+export const threads = () => (wllama.isModelLoaded() ? wllama.getNumThreads() : 0);
+
+// One question at a time, with a compact context: prompt processing on a phone CPU
+// takes time for every token.
 export async function ask(question, context, onToken) {
-  // Gemma has no "system" role: instructions and data go in the user message.
-  const content = `${INSTRUCTIONS}\n\n${context}\n\n${question}`;
-  const stream = await engine.chat.completions.create({
-    messages: [{ role: 'user', content }],
+  const stream = await wllama.createChatCompletion({
+    messages: [{ role: 'user', content: `${INSTRUCTIONS}\n\n${context}\n\n${question}` }],
     stream: true,
     temperature: 0.5,
     max_tokens: MAX_ANSWER_TOKENS,
-    stream_options: { include_usage: true },
   });
   let text = '';
-  let usage = null;
   for await (const chunk of stream) {
-    text += chunk.choices[0]?.delta?.content ?? '';
-    if (chunk.usage) usage = chunk.usage;
+    text += chunk.choices?.[0]?.delta?.content ?? '';
     onToken(text);
   }
-  return { text, usage };
+  return { text };
 }
