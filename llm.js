@@ -95,16 +95,26 @@ export const threads = () => (loadedId ? wllama.getNumThreads() : 0);
 const PREAMBLE_RE = /^\s*(certo|ecco|ok|okay|sure|here|of course)\b[^\n]*(\n+|$)/i;
 const clean = (text) => text.replace(PREAMBLE_RE, '').trimStart();
 
+// Questions about whether, when or where to go: these get the radar's verdict and the weather.
+// Anything else ("porcini or chanterelles, which tastes better?") is a general question:
+// no verdict and no weather, or the model talks about the forecast whatever you ask.
+export const FORECAST_RE = /(oggi|domani|weekend|fine settimana|sabato|domenica|quando|dove|vado|andare|uscire|conviene|trov|cerc|posto|posti|zona|radar|diario|today|tomorrow|saturday|sunday|when|where|should i go|worth|spot|look for|find|diary)/i;
+
 // One question at a time. What makes a 1B model behave:
 //  - instructions in the user's language;
 //  - data as plain sentences already interpreted by the radar (no scores to misread);
 //  - one worked example of the expected answer;
 //  - no mention of topics it should not bring up by itself.
+// situation: the radar's data for forecast questions, null for general ones.
 export async function ask(question, situation, onToken) {
+  const kind = situation ? 'forecast' : 'general';
+  const intro = `${t(`llm.instructions.${kind}`)}\n\n`;
+  const exampleData = situation ? `${t('llm.example.situation')}\n\n` : '';
+  const data = situation ? `${situation}\n\n` : '';
   const messages = [
-    { role: 'user', content: `${t('llm.instructions')}\n\n${t('llm.example.situation')}\n\n${t('llm.question')}: ${t('llm.example.q')}` },
-    { role: 'assistant', content: t('llm.example.a') },
-    { role: 'user', content: `${situation}\n\n${t('llm.question')}: ${question}` },
+    { role: 'user', content: `${intro}${exampleData}${t('llm.question')}: ${t(`llm.example.${kind}.q`)}` },
+    { role: 'assistant', content: t(`llm.example.${kind}.a`) },
+    { role: 'user', content: `${data}${t('llm.question')}: ${question}` },
   ];
   const stream = await wllama.createChatCompletion({
     messages,

@@ -515,17 +515,24 @@ async function send(question) {
   if (!llm.isLoaded(modelSelect.value) || !question) return;
   addMsg('user', question);
   if (llm.EDIBILITY_RE.test(question)) addMsg('bot alert', t('ask.edibility'));
-  const out = addMsg('bot', '📍…');
   $('#ask-input').disabled = true;
-  await refreshHere();
-  // The radar's verdict appears at once; the model's tips stream in below it.
-  const { verdict, situation } = buildAnswerContext();
-  out.textContent = `${verdict}\n\n…`;
+  // Only questions about whether/when/where to go get the radar: general ones are answered alone.
+  const forecast = llm.FORECAST_RE.test(question);
+  const out = addMsg('bot', forecast ? '📍…' : '…');
+  let verdict = '';
+  let situation = null;
+  if (forecast) {
+    await refreshHere();
+    ({ verdict, situation } = buildAnswerContext());
+  }
+  // The radar's verdict appears at once; the model's text streams in below it.
+  const show = (text) => { out.textContent = verdict ? `${verdict}\n\n${text}` : text; };
+  show('…');
   try {
-    await llm.ask(question.slice(0, 300), situation, (text) => { out.textContent = `${verdict}\n\n${text}`; });
+    await llm.ask(question.slice(0, 300), situation, show);
   } catch (e) {
     console.error(e);
-    out.textContent = `${verdict}\n\n${t('ask.error', { err: errText(e) })}`;
+    show(t('ask.error', { err: errText(e) }));
   }
   $('#ask-input').disabled = false;
   $('#ask-input').focus();

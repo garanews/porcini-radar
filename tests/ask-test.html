@@ -27,7 +27,7 @@
     let t0 = performance.now();
     await llm.load(model, () => {});
     log(`${model} loaded in ${((performance.now() - t0) / 1000).toFixed(1)} s, threads ${llm.threads()}, isolated ${window.crossOriginIsolated}`);
-    for (const question of [t('llm.example.q'), t('chip.whereQ')]) {
+    for (const question of [t('llm.example.forecast.q'), t('chip.whereQ')]) {
       t0 = performance.now();
       let first = 0;
       const { text } = await llm.ask(question, situation, () => { first ||= performance.now(); });
