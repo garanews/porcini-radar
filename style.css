@@ -118,6 +118,23 @@ progress { width: 100%; margin-top: 10px; }
 #ask-form { display: flex; gap: 8px; }
 #ask-form input { flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--card); }
 
+/* Compass tab */
+button.wide { width: 100%; }
+label.field { display: block; margin: 12px 0; font-size: .9rem; color: var(--muted); }
+label.field select { display: block; width: 100%; margin-top: 4px; padding: 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--card); }
+.compass { text-align: center; }
+#nav-arrow { width: 160px; height: 160px; margin: 8px auto; display: block; fill: var(--accent); transition: transform .25s ease-out; }
+.big { font-size: 2rem; font-weight: 700; }
+.mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: 1.5rem; word-break: break-all; }
+.sos { border-color: #b23b2a; }
+.sos h2 { margin-top: 0; color: #b23b2a; }
+.sos-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+a.button {
+  display: inline-block; text-decoration: none; color: inherit;
+  border: 1px solid var(--border); background: var(--card); border-radius: 10px; padding: 10px 14px;
+}
+a.button.danger { background: #b23b2a; border-color: #b23b2a; color: #fff; font-weight: 700; }
+
 nav {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 2;
   display: flex; background: var(--card); border-top: 1px solid var(--border);

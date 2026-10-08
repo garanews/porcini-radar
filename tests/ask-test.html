@@ -15,8 +15,8 @@
   // Busto Garolfo-like lowland spot with little rain, plus two saved spots and a diary.
   const situation = [
     t('ctx.today', { day: fmtDay('2026-10-08') }),
-    t('ctx.here', { elev: 205, verdict: t('verdict.poor'), why: [t('reason.littleRain', { mm: 13 }), t('reason.temp', { t: '18.2' }) + t('reason.temp.warm')].join('; ') }),
-    t('verdict.lowland'),
+    t('ctx.verdict', { verdict: `${t('answer.here', { elev: 205, verdict: t('verdict.poor') })} ${t('verdict.lowland')} ${t('answer.bestSpot', { day: fmtDay('2026-10-17'), name: 'Faggeta del Monte Penna' })}` }),
+    t('ctx.here', { elev: 205, why: [t('reason.littleRain', { mm: 13 }), t('reason.soilTemp', { t: '17.2' }) + t('reason.temp.ideal'), t('reason.soil.damp', { pct: 27 })].join('; ') }),
     t('ctx.spots'),
     t('ctx.spot', { name: 'Faggeta del Monte Penna', elev: 1180, label: t('label.low').toLowerCase(), bestDay: fmtDay('2026-10-17'), bestLabel: t('label.top').toLowerCase() }),
     t('ctx.spot', { name: 'Castagneto Borgotaro', elev: 620, label: t('label.maybe').toLowerCase(), bestDay: fmtDay('2026-10-16'), bestLabel: t('label.top').toLowerCase() }),

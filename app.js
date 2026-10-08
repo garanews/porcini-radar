@@ -2,6 +2,7 @@ import { scoreDays, fetchWeather } from './radar.js';
 import { t, locale, fmtDay, weekdayNarrow, habitatName, applyStatic } from './i18n.js';
 import * as db from './db.js';
 import * as llm from './llm.js';
+import * as compass from './nav.js';
 
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -24,6 +25,8 @@ document.querySelectorAll('nav button').forEach((btn) =>
     document.querySelectorAll('nav button, .tab').forEach((el) => el.classList.remove('active'));
     btn.classList.add('active');
     $(`#tab-${btn.dataset.tab}`).classList.add('active');
+    // GPS tracking and compass only while the Compass tab is open: they drain the battery.
+    if (btn.dataset.tab === 'nav') compass.start(); else compass.stop();
   }),
 );
 
@@ -207,13 +210,20 @@ async function resizePhoto(file, max = 1280) {
   return new Promise((r) => canvas.toBlob(r, 'image/jpeg', 0.8));
 }
 
-// Radar score on the day of the outing, from the nearest saved spot: lets the diary check the heuristic.
-function radarScoreFor(pos, dateIso) {
+// Radar score on the day of the outing, so the diary can check the heuristic ("did the radar
+// get it right?"). Online: computed at the exact position. Offline: from the forecast saved
+// for the nearest spot within 5 km.
+async function radarScoreFor(pos, dateIso) {
   const near = places.map((p) => ({ p, d: distanceKm(p, pos) })).sort((a, b) => a.d - b.d)[0];
-  if (!near || near.d > 5) return null;
-  const wx = forecasts.get(near.p.id);
+  const placeName = near && near.d <= 5 ? near.p.name : null;
+  let wx = null;
+  if (navigator.onLine) {
+    try { wx = await fetchWeather(pos); } catch {}
+  }
+  if (!wx && placeName) wx = forecasts.get(near.p.id);
   const day = wx && scoreDays(wx.daily, dateIso)[0];
-  return { place: near.p.name, score: day ? day.score : null };
+  if (!day && !placeName) return null;
+  return { place: placeName, score: day ? day.score : null };
 }
 
 $('#entry-form').addEventListener('submit', async (e) => {
@@ -240,13 +250,13 @@ $('#entry-form').addEventListener('submit', async (e) => {
     habitat: data.get('habitat'),
     notes: data.get('notes').trim(),
     photo: file && file.size ? await resizePhoto(file) : null,
-    radar: pos ? radarScoreFor(pos, date) : null,
+    radar: pos ? await radarScoreFor(pos, date) : null,
   };
   if (pos && data.get('asPlace')) {
     const name = prompt(t('diary.placeName'), `${habitatName(entry.habitat)} ${date}`);
     if (name) {
       const place = await savePlace(pos, name.trim());
-      entry.radar = { place: place.name, score: null };
+      entry.radar = { place: place.name, score: entry.radar?.score ?? null };
       renderPlaces();
     }
   }
@@ -260,11 +270,34 @@ $('#entry-form').addEventListener('submit', async (e) => {
 let entries = [];
 let photoUrls = [];
 
+// "Did the radar get it right?": compares the radar score of outings with porcini against
+// outings that came back empty. Needs both kinds, so the diary should log empty outings too.
+function calibrationHtml() {
+  const scored = entries.filter((en) => en.radar?.score != null);
+  const avg = (list) => Math.round(list.reduce((s, en) => s + en.radar.score, 0) / list.length);
+  let body;
+  if (scored.length < 3) {
+    body = `<p class="small">${t('calib.need', { n: scored.length })}</p>`;
+  } else {
+    const hits = scored.filter((en) => en.found > 0);
+    const misses = scored.filter((en) => en.found === 0);
+    if (!hits.length || !misses.length) {
+      body = `<p class="small">${t('calib.oneSided')}</p>`;
+    } else {
+      const a = avg(hits), b = avg(misses);
+      const verdict = a - b >= 15 ? 'calib.good' : a - b > 0 ? 'calib.weak' : 'calib.bad';
+      body = `<p class="small">${t('calib.stats', { a, na: hits.length, b, nb: misses.length })}</p>
+        <p class="small"><strong>${t(verdict)}</strong></p>`;
+    }
+  }
+  return `<details class="card calib"><summary>${t('calib.title')}</summary>${body}</details>`;
+}
+
 async function renderEntries() {
   entries = (await db.getAll('entries')).sort((a, b) => b.id.localeCompare(a.id));
   photoUrls.forEach(URL.revokeObjectURL);
   photoUrls = [];
-  $('#entries').innerHTML = entries.length
+  $('#entries').innerHTML = (entries.length ? calibrationHtml() : '') + (entries.length
     ? entries.map((en) => {
         let img = '';
         if (en.photo) { const u = URL.createObjectURL(en.photo); photoUrls.push(u); img = `<img src="${u}" alt="">`; }
@@ -279,7 +312,7 @@ async function renderEntries() {
           ${en.notes ? `<p class="small">${esc(en.notes)}</p>` : ''}
         </div></div>`;
       }).join('')
-    : `<p class="muted">${t('diary.empty')}</p>`;
+    : `<p class="muted">${t('diary.empty')}</p>`);
 }
 
 $('#entries').addEventListener('click', async (e) => {
@@ -405,31 +438,46 @@ async function refreshHere() {
   }
 }
 
-// The "situation" the model reads. A 1B model misreads scores, so the radar's conclusion goes
-// in already written out as plain sentences. Compact on purpose: on a phone CPU every prompt
-// token costs time. So: the current position, the 3 best saved spots, a short diary summary.
-function buildContext() {
+const bestOf = (days) => days.reduce((a, b) => (b.score > a.score ? b : a));
+const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+// The answer to "should I go?" is computed here, not by the model: a 1B model contradicted
+// the data ("yes, go today" with a dry forecast). Returns:
+//  - verdict: shown to the user first, always consistent with the radar;
+//  - situation: what the model reads, plain sentences, compact (every prompt token costs
+//    time on a phone CPU): the verdict, the current position, the 3 best spots, the diary.
+function buildAnswerContext() {
+  const verdictLines = [];
   const lines = [t('ctx.today', { day: fmtDay(todayIso()) })];
+
   const hereWx = herePlace && forecasts.get('here');
   const hereDays = hereWx ? scoreDays(hereWx.daily, todayIso()) : [];
   if (hereDays.length) {
     const today = hereDays[0];
-    const best = hereDays.reduce((a, b) => (b.score > a.score ? b : a));
+    const best = bestOf(hereDays);
     const verdict = today.score >= 50 ? t('verdict.go')
       : best.score >= 50 ? t('verdict.wait', { day: fmtDay(best.date) })
       : t('verdict.poor');
-    lines.push(t('ctx.here', { elev: hereWx.elevation, verdict, why: today.reasons.join('; ') }));
-    if (hereWx.elevation < 400) lines.push(t('verdict.lowland'));
+    verdictLines.push(t('answer.here', { elev: hereWx.elevation, verdict: capitalize(verdict) }));
+    if (hereWx.elevation < 400) verdictLines.push(t('verdict.lowland'));
+    lines.push(t('ctx.here', { elev: hereWx.elevation, why: today.reasons.join('; ') }));
   } else {
+    // GPS worked but no forecast (offline, no saved spot nearby) vs no GPS at all.
+    verdictLines.push(t(herePlace ? 'answer.noWeather' : 'answer.noHere'));
     lines.push(t('ctx.noHere'));
   }
+
   const spots = places
     .map((p) => ({ p, wx: forecasts.get(p.id) }))
     .map(({ p, wx }) => ({ p, wx, days: wx ? scoreDays(wx.daily, todayIso()) : [] }))
     .filter((s) => s.days.length)
-    .map((s) => ({ ...s, best: s.days.reduce((a, b) => (b.score > a.score ? b : a)) }))
+    .map((s) => ({ ...s, best: bestOf(s.days) }))
     .sort((a, b) => b.best.score - a.best.score)
     .slice(0, 3);
+  if (spots.length && spots[0].best.score >= 50) {
+    verdictLines.push(t('answer.bestSpot', { day: fmtDay(spots[0].best.date), name: spots[0].p.name }));
+  }
+  lines.splice(1, 0, t('ctx.verdict', { verdict: verdictLines.join(' ') }));
   if (spots.length) {
     lines.push(t('ctx.spots'));
     for (const { p, wx, days, best } of spots) {
@@ -451,7 +499,7 @@ function buildContext() {
     }));
     lines.push(t('ctx.diary', { outings: entries.length, total, recent: recent.join('; ') }));
   }
-  return lines.join('\n');
+  return { verdict: `📡 ${verdictLines.join(' ')}`, situation: lines.join('\n') };
 }
 
 function addMsg(cls, text) {
@@ -470,12 +518,14 @@ async function send(question) {
   const out = addMsg('bot', '📍…');
   $('#ask-input').disabled = true;
   await refreshHere();
-  out.textContent = '…';
+  // The radar's verdict appears at once; the model's tips stream in below it.
+  const { verdict, situation } = buildAnswerContext();
+  out.textContent = `${verdict}\n\n…`;
   try {
-    await llm.ask(question.slice(0, 300), buildContext(), (text) => { out.textContent = text; });
+    await llm.ask(question.slice(0, 300), situation, (text) => { out.textContent = `${verdict}\n\n${text}`; });
   } catch (e) {
     console.error(e);
-    out.textContent = t('ask.error', { err: errText(e) });
+    out.textContent = `${verdict}\n\n${t('ask.error', { err: errText(e) })}`;
   }
   $('#ask-input').disabled = false;
   $('#ask-input').focus();

@@ -3,7 +3,7 @@
 //
 // It also adds the cross-origin isolation headers (COOP/COEP), which GitHub Pages cannot set:
 // they enable SharedArrayBuffer, so llama.cpp can run on several CPU threads.
-const VERSION = 'v12';
+const VERSION = 'v13';
 const SHELL = [
   './',
   'index.html',
@@ -13,6 +13,7 @@ const SHELL = [
   'radar.js',
   'db.js',
   'llm.js',
+  'nav.js',
   'vendor/wllama/index.js',
   'vendor/wllama/wllama.wasm',
   'manifest.webmanifest',

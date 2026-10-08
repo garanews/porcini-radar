@@ -8,9 +8,17 @@ Built for the DEV [Hacktoberfest Open-Source AI Challenge – Week 1: Touch Gras
 
 ## What it does
 
-- **Radar** – estimates the porcini "flush" for the next 16 days at your spots, from rain and temperatures ([Open-Meteo](https://open-meteo.com/)). You save spots with the GPS while you are in the woods; at home you check them all.
-- **Diary** – log each outing with photo, GPS position, woodland type and how many porcini you found. Everything stays on the phone (IndexedDB) and works offline. Each entry also stores that day's radar score, so over time you can see whether the heuristic is right.
-- **Ask** – an open-weight LLM (Google **Gemma 3 1B**, Q4_0 GGUF, ~720 MB) runs **inside the phone's browser** on the CPU, through [wllama](https://github.com/ngxson/wllama) (llama.cpp compiled to WebAssembly). It reads a compact summary of your forecasts and diary and gives advice, with no connection.
+- **Radar** – estimates the porcini "flush" for the next 16 days at your spots, from rain, soil temperature and soil moisture ([Open-Meteo](https://open-meteo.com/)). You save spots with the GPS while you are in the woods; at home you check them all.
+- **Diary** – log each outing with photo, GPS position, woodland type and how many porcini you found. Everything stays on the phone (IndexedDB) and works offline. Each entry stores that day's radar score, and **"Did the radar get it right?"** compares the scores of outings with porcini against empty ones.
+- **Compass** – **back to the car** and **take me to a spot or a find**: an arrow, the distance and a buzz on arrival, from GPS and the phone's compass only, no maps or signal needed. **SOS**: your coordinates in large type, a button to call 112 and one to **send your position by SMS**, which gets through when the signal is too weak for internet.
+- **Ask** – an open-weight LLM (Google **Gemma 3 1B**, or **Gemma 2 2B** on stronger phones) runs **inside the phone's browser** on the CPU, through [wllama](https://github.com/ngxson/wllama) (llama.cpp compiled to WebAssembly), with no connection.
+
+### Who decides what: code for the verdict, the model for the words
+
+A 1B model is fluent but does not reason reliably over data: asked "should I go today?" with a dry forecast, it answered "yes". So the app splits the work:
+
+1. **The verdict is computed in code** from the radar ("too dry here, better around Sat 17 at your beech wood") and shown first, so it is always consistent with the data.
+2. **The model adds practical tips** (which woods, altitude, slope, what to look for), the part a small model does well. It reads the situation as plain sentences, with instructions in the user's language and one worked example; it is told not to repeat or contradict the verdict.
 
 ### Getting an LLM to run on a mid-range phone
 
@@ -36,8 +44,11 @@ The app does **not** identify mushrooms and never says whether one is edible. Sm
 The score (0-100) is:
 
 - the **rain** of 7-21 days before, weighted most between 10 and 14 days;
-- multiplied by how suitable the week's mean **temperature** is (ideal 11-18 °C);
+- multiplied by how suitable the **soil temperature** at 6 cm is (ideal 11-18 °C; the air temperature of the week when soil data is missing);
+- multiplied by the **soil moisture** of the last 3 days (rain two weeks ago is useless if the soil has dried out since);
 - minus **penalties** for nights below 3 °C and for dry, warm weeks.
+
+Open-Meteo's soil data covers about the next 7 days; beyond that the air temperature is used and moisture counts as unknown.
 
 These are foragers' rules of thumb, not a validated model: the diary is there to check them against what you actually find. The logic is in [radar.js](radar.js).
 

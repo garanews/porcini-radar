@@ -63,6 +63,31 @@
       <button id="btn-export" data-i18n="diary.export"></button>
     </section>
 
+    <!-- COMPASS: back to the car / to a spot, and SOS. GPS + compass only, works offline. -->
+    <section id="tab-nav" class="tab">
+      <button id="btn-car" class="primary wide" data-i18n="nav.saveCar"></button>
+      <label class="field"><span data-i18n="nav.target"></span>
+        <select id="nav-target"></select>
+      </label>
+      <div class="card compass">
+        <svg id="nav-arrow" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 6 L78 86 L50 70 L22 86 Z"/></svg>
+        <div id="nav-dist" class="big">—</div>
+        <p id="nav-info" class="muted small"></p>
+        <button id="btn-compass" data-i18n="nav.enableCompass"></button>
+      </div>
+      <div class="card sos">
+        <h2 data-i18n="sos.title"></h2>
+        <div id="sos-coords" class="big mono">—</div>
+        <p id="sos-extra" class="muted small"></p>
+        <div class="sos-actions">
+          <a class="button danger" href="tel:112" data-i18n="sos.call"></a>
+          <a id="sos-sms" class="button" href="sms:" data-i18n="sos.sms"></a>
+          <button id="sos-share" data-i18n="sos.share"></button>
+        </div>
+        <p class="muted small" data-i18n="sos.note"></p>
+      </div>
+    </section>
+
     <!-- ASK -->
     <section id="tab-ask" class="tab">
       <p class="warning" data-i18n-html="ask.warning"></p>
@@ -95,6 +120,7 @@
   <nav>
     <button data-tab="radar" class="active">📡<span data-i18n="nav.radar">Radar</span></button>
     <button data-tab="diary">📓<span data-i18n="nav.diary">Diary</span></button>
+    <button data-tab="nav">🧭<span data-i18n="nav.compass">Compass</span></button>
     <button data-tab="ask">💬<span data-i18n="nav.ask">Ask</span></button>
   </nav>
 
