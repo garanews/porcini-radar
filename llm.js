@@ -12,11 +12,13 @@ import { lang } from './i18n.js';
 // Gemma 3 1B instruct, Google's open-weight model, 4-bit Q4_0 GGUF (fastest on ARM CPUs).
 export const MODEL_NAME = 'Gemma 3 1B';
 const MODEL_URL = 'https://huggingface.co/unsloth/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_0.gguf';
-export const MAX_ANSWER_TOKENS = 200;
+// Every token costs time on a phone CPU: short answers, the advice comes first.
+export const MAX_ANSWER_TOKENS = 150;
 
 const LANGUAGE = lang === 'it' ? 'Italian' : 'English';
 
-const INSTRUCTIONS = `You are Porcini Radar, a friendly expert porcini forager. Answer in ${LANGUAGE}, in 3-5 short sentences, using the data below. Never say a mushroom is edible or safe: for that, send the user to the free ASL mycological inspection (Ispettorato Micologico).`;
+// Small models open with greetings and self-introductions: forbid them explicitly.
+const INSTRUCTIONS = `You are an expert porcini forager advising a friend. Answer in ${LANGUAGE}, in at most 3 short sentences, using the data below. Start directly with the advice: no greetings, do not introduce yourself. Never say a mushroom is edible or safe: for that, send the user to the free ASL mycological inspection (Ispettorato Micologico).`;
 
 // Questions about edibility: the app shows the warning itself, it does not rely only on the model.
 export const EDIBILITY_RE = /(mangi|commestibil|velenos|tossic|cucinar|si pu[oò] mangiare|edible|\beat\b|eating|poison|toxic|safe to|cook)/i;
